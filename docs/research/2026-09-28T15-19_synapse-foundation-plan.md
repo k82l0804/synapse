@@ -586,7 +586,7 @@ You can re-add to Synapse later (`synapse add ./`) and it recreates `.synapse/` 
 │   ├── current/phase-{N}.md            ← active sprint tasks
 │   ├── future/phase-{N}.md             ← queued phases
 │   ├── done/phase-{N}.md               ← completed phases (archived)
-│   └── deferred.md                     ← deferred items
+│   └── deferred/                       ← deferred items (one file per item, immutable)
 │
 ├── plans/                              ← implementation blueprints: how to do it
 │   ├── current/                        ← active plans
@@ -723,7 +723,7 @@ spec_path      = {specs_root}/{filename}                   # F-XXX-name.md (stab
 research_path  = {docs_root}/research/{filename}           # human docs, pipeline reads only
 task_path      = {tasks_root}/current/{phase}.md
 plan_path      = {plans_root}/current/{filename}
-deferred_path  = {tasks_root}/deferred.md
+deferred_path  = {tasks_root}/deferred/   # create new file per item, never append to existing
 
 review_path    = {reviews_root}/{type}/{filename}          # type: spec|plan|code|triage
 feedback_path  = {reviews_root}/feedback/{filename}        # human rejection notes
@@ -912,7 +912,7 @@ This repo is managed by Synapse. Pipeline artifacts live in `.synapse/`.
 - Feature registry:   `feature-registry.yaml`
 - Tasks (current):    `tasks/current/`
 - Tasks (future):     `tasks/future/`
-- Tasks (deferred):   `tasks/deferred.md`
+- Tasks (deferred):   `tasks/deferred/`
 - Plans (active):     `plans/current/`
 - Specs:              `specs/`
 - Research:           `docs/research/`
@@ -927,7 +927,7 @@ This repo is managed by Synapse. Pipeline artifacts live in `.synapse/`.
 - Planner (AGY): writes to `plans/current/` and `tasks/`
 - Coder (AGY): writes to product source code only — NOT to `reviews/`, `docs/`, `plans/`
 - Reviewer (Grok): writes to `reviews/{type}/` — READ-ONLY to product source and all other dirs
-- Triage (AGY): writes auto-fixes to product source, appends to `tasks/deferred.md`
+- Triage (AGY): writes auto-fixes to product source, appends to `tasks/deferred/`
 - Human feedback: written to `reviews/feedback/` via `synapse reject` command
 - NEVER modify `.synapse/run/` — daemon owns that directory
 

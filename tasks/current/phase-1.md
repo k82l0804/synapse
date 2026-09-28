@@ -114,12 +114,19 @@ depends_on: []
   - `package.json` exists with name, version, scripts (`synapse`, `test`, `typecheck`)
   - `bunfig.toml` exists
   - `AGENTS.md` (the constitution file) exists — loaded as first context by every specialist
-  - `AGENTS.md` covers: anti-hang rules, working directory, key commands, schema enforcement rule ("failed, not close enough"), review rubric, deferred-items rule
-  - `.gitignore` has `.synapse/run/` entry (operational state gitignored)
-  - `.gitignore` has `synapse.db`, `synapse.db-shm`, `synapse.db-wal` entries
+  - `AGENTS.md` covers:
+    - Anti-hang rules (non-interactive execution, timeouts)
+    - Repo layout contract (which dirs pipeline writes to, that docs/ is read-only to pipeline)
+    - Key commands (`bun run synapse`, `bun run test`, `bun run typecheck`)
+    - Schema enforcement rule: "if agent output fails the schema, job is FAILED not close enough"
+    - Review rubric (severity tags, Grok read-only constraint)
+    - Deferred-items rule (deferred findings go to tasks/deferred.md, not lost in prose)
+  - `.gitignore` has `.synapse/run/` entry (idempotent — check before appending)
+  - `.gitignore` has `synapse.db`, `synapse.db-shm`, `synapse.db-wal` entries (idempotent)
 **Test contract:**
   - MUST: `bun run synapse --help` works from the synapse repo root
   - MUST NOT: leave any TODO placeholders in AGENTS.md
+  - MUST NOT: AGENTS.md omit the repo layout contract (agents must know where to write)
 **Priority:** HIGH
 
 ---
@@ -192,16 +199,21 @@ depends_on: [T-L0-5]
 
 ---
 
-### T-1-4: Deferred items written to tasks/deferred.md via MCP
+### T-1-4: Deferred items written to tasks/deferred/ via MCP
 type: chore
 depends_on: [T-L0-5]
 **Acceptance criteria:**
-  - `skills/review-triage/SKILL.md` instructs: deferred [WARNING] → append to `tasks/deferred.md` via MCP
+  - `skills/review-triage/SKILL.md` instructs: deferred [WARNING] → create new file in `tasks/deferred/`
+  - File naming: `tasks/deferred/YYYY-MM-DDTHH-MM_{artifact-id}_{short-description}.md`
+  - Each deferred file is self-contained: includes origin (which review), context, and the deferred finding
   - `skills/review-triage/SKILL.md` explicitly references the deferred-items-tracking rule
-  - At least one deferred item from a real triage run appears in deferred.md (verified manually)
+  - Triage never appends to an existing file — always creates a new timestamped file
+  - At least one deferred item from a real triage run exists in tasks/deferred/ (verified manually)
 **Test contract:**
-  - MUST: deferred findings are traceable in tasks/deferred.md, not just in triage prose
+  - MUST: each deferred finding produces a discrete, timestamped file in tasks/deferred/
+  - MUST: deferred files are self-contained (readable without the originating review)
   - MUST NOT: triage doc be the only record of a deferred item
+  - MUST NOT: triage append to or modify any existing file in tasks/deferred/
 **Priority:** MEDIUM
 
 ---
@@ -225,7 +237,8 @@ type: chore
 depends_on: [T-L0-4]
 **Acceptance criteria:**
   - TESTER_SIGNAL format matches exactly what's defined in `specs/pipeline-signal-protocol.md`
-  - `skills/run-tests/SKILL.md` updated to emit TESTER_SIGNAL as the last line of its output
+  - `skills/run-tests/SKILL.md` exists and emits TESTER_SIGNAL as the last line of its output
+    (create if missing; update if it exists but lacks the signal)
   - Pipeline workflow has a distinct `test-cycle` step separate from `fix-tests`
 **Test contract:**
   - MUST: run-tests produces a TESTER_SIGNAL parseable by a one-line regex
@@ -248,7 +261,7 @@ depends_on: [T-L0-4]
 | T-1-1 | Grok read-only enforcement | chore | ⬜ todo (depends: L0-6) |
 | T-1-2 | Grok workspace dirs | chore | ⬜ todo (depends: 1-1) |
 | T-1-3 | Typecheck gate in triage | chore | ⬜ todo (depends: L0-5) |
-| T-1-4 | Deferred items via MCP | chore | ⬜ todo (depends: L0-5) |
+| T-1-4 | Deferred items in tasks/deferred/ | chore | ⬜ todo (depends: L0-5) |
 | T-1-5 | Test contract in make-plans | chore | ⬜ todo (depends: L0-3, L0-4) |
 | T-1-6 | TESTER_SIGNAL + tester step | chore | ⬜ todo (depends: L0-4) |
 
