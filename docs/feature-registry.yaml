@@ -1,0 +1,79 @@
+# Synapse Feature Registry
+# tag_pattern: @synapse-feature
+# tag_scan_dirs: src/
+
+features:
+  - id: S-001
+    name: pipeline-engine
+    description: reflow-ts workflow engine with convergence-loop support
+    status: shipped
+    phase: 1
+    source_files:
+      - src/engine/pipeline.ts
+    notes: Extracted from fox/tools/jobs/pipeline.ts (2026-09-28)
+
+  - id: S-002
+    name: pipeline-api
+    description: REST API server for pipeline state (runs on port 4042)
+    status: shipped
+    phase: 1
+    source_files:
+      - src/api/server.ts
+
+  - id: S-003
+    name: pipeline-dashboard
+    description: React Flow live graph UI (runs on port 4041)
+    status: shipped
+    phase: 1
+    source_files:
+      - src/dashboard/
+
+  - id: S-004
+    name: agent-job-dispatcher
+    description: agent-job.sh specialist dispatcher (agy/grok via skill prompts)
+    status: shipped
+    phase: 1
+    source_files:
+      - agent-job.sh
+
+  - id: S-005
+    name: grok-read-only-enforcement
+    description: Inject read-only constraint into every Grok invocation
+    status: planned
+    phase: 1
+    tasks: [1-1]
+
+  - id: S-006
+    name: grok-workspace-dirs
+    description: Pass synapse root as --add-dir to Grok for tasks/plans access
+    status: planned
+    phase: 1
+    tasks: [1-2]
+
+  - id: S-007
+    name: triage-typecheck-gate
+    description: Typecheck before committing auto-fixes; ESCALATE on red
+    status: planned
+    phase: 1
+    tasks: [1-3]
+
+  - id: S-008
+    name: triage-deferred-items-mcp
+    description: Deferred findings written to tasks/deferred.md via MCP
+    status: planned
+    phase: 1
+    tasks: [1-4]
+
+  - id: S-009
+    name: planner-test-contracts
+    description: Structured test contract format in make-plans skill output
+    status: planned
+    phase: 1
+    tasks: [1-5]
+
+  - id: S-010
+    name: tester-signal
+    description: TESTER_SIGNAL format + separate tester pipeline step
+    status: planned
+    phase: 1
+    tasks: [1-6]
