@@ -19,7 +19,7 @@ No implementation work begins until these are complete.
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `docs/specs/feature-spec-format.md` exists
+  - `specs/feature-spec-format.md` exists
   - Defines the exact template for a spec: Acceptance Criteria section, High-Level Tasks section, Test Contract section (MUST / MUST NOT format)
   - Includes a complete worked example (F-001)
   - Includes a JSON schema or markdown checklist validators can use
@@ -36,7 +36,7 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `docs/specs/task-format.md` exists
+  - `specs/task-format.md` exists
   - Defines all fields: `type`, `depends_on`, `feature`, `spec`, `spec_task`, `rationale`, `acceptance_criteria`, `test_contract`, `priority`
   - Includes worked examples for each work type: `feature`, `refactor`, `chore`, `bugfix`
   - Specifies which fields are required vs optional per type
@@ -52,7 +52,7 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `docs/specs/plan-format.md` exists
+  - `specs/plan-format.md` exists
   - Defines plan header fields (target_repo, feature, spec ref, task ref, phase)
   - Defines Deliverables section format (numbered, each with files-to-change, spec contract ref)
   - Defines Test Contract section (maps to spec's MUST/MUST NOT)
@@ -68,7 +68,7 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `docs/specs/pipeline-signal-protocol.md` exists
+  - `specs/pipeline-signal-protocol.md` exists
   - Defines `PIPELINE_SIGNAL` grammar: `AUTO-FIX=N ESCALATE=M` field names and value types
   - Defines `TESTER_SIGNAL` grammar: `PASS=Y FAIL=N SKIPPED=M TYPECHECK=green|red`
   - Both signals must appear as the LAST line of their artifact (HTML comment format)
@@ -85,7 +85,7 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `docs/specs/review-format.md` exists
+  - `specs/review-format.md` exists
   - Defines severity tags: `[BLOCKING]`, `[WARNING]`, `[INFO]`
   - Defines verdict line: `APPROVE`, `REQUEST_CHANGES`, or `NEEDS_DISCUSSION`
   - Defines required sections: Findings (by severity), Missing Tests, Architectural Risk, Verdict
@@ -136,7 +136,7 @@ depends_on: [T-L0-1, T-L0-2]
     - Every feature MUST have: user, trigger, visible outcome, non-goal
     - `--draft` flag: propose features without writing, stop for review
     - On confirm: writes registry rows (status: planned) + spec stubs using T-L0-1 template
-    - Spec stubs written to `docs/specs/F-XXX-name.md` (stable filename, no timestamp)
+    - Spec stubs written to `specs/F-XXX-name.md` (stable filename, no timestamp)
     - Prints ordered feature list (infra→data→API→UI) with scores, user can override
     - Spec stubs that fail the T-L0-1 schema do NOT enter the registry (fails the job)
     - NEVER auto-starts make-plans after running
@@ -224,7 +224,7 @@ depends_on: [T-L0-3, T-L0-4]
 type: chore
 depends_on: [T-L0-4]
 **Acceptance criteria:**
-  - TESTER_SIGNAL format matches exactly what's defined in `docs/specs/pipeline-signal-protocol.md`
+  - TESTER_SIGNAL format matches exactly what's defined in `specs/pipeline-signal-protocol.md`
   - `skills/run-tests/SKILL.md` updated to emit TESTER_SIGNAL as the last line of its output
   - Pipeline workflow has a distinct `test-cycle` step separate from `fix-tests`
 **Test contract:**
@@ -238,11 +238,11 @@ depends_on: [T-L0-4]
 
 | Task | Description | Type | Status |
 |------|-------------|------|--------|
-| T-L0-1 | docs/specs/feature-spec-format.md | chore | ⬜ todo |
-| T-L0-2 | docs/specs/task-format.md | chore | ⬜ todo |
-| T-L0-3 | docs/specs/plan-format.md | chore | ⬜ todo |
-| T-L0-4 | docs/specs/pipeline-signal-protocol.md | chore | ⬜ todo |
-| T-L0-5 | docs/specs/review-format.md | chore | ⬜ todo |
+| T-L0-1 | specs/feature-spec-format.md | chore | ⬜ todo |
+| T-L0-2 | specs/task-format.md | chore | ⬜ todo |
+| T-L0-3 | specs/plan-format.md | chore | ⬜ todo |
+| T-L0-4 | specs/pipeline-signal-protocol.md | chore | ⬜ todo |
+| T-L0-5 | specs/review-format.md | chore | ⬜ todo |
 | T-L0-6 | package.json + AGENTS.md | chore | ⬜ todo |
 | T-L0-7 | skills/research-to-features/SKILL.md | chore | ⬜ todo (depends: L0-1, L0-2) |
 | T-1-1 | Grok read-only enforcement | chore | ⬜ todo (depends: L0-6) |
