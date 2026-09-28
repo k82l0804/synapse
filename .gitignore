@@ -6,3 +6,9 @@ node_modules/
 nohup.out
 dist/
 .vite/
+
+# Synapse operational state — never commit
+.synapse/run/
+synapse.db
+synapse.db-shm
+synapse.db-wal
