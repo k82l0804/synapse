@@ -114,6 +114,21 @@ The pipeline pauses until the escalation is resolved.
 - Full-auto: a director agent sits at gates. Escalations halt the pipeline and alert the human.
 - The gate *interface* is identical in both modes. Only the approver changes.
 
+**Reviewer-Generator Separation (architectural invariant):**
+The agent that generates an artifact must never review it.
+
+- **AGY** generates: specs, tasks, plans, code, triage fixes — the creative/constructive role
+- **Grok** reviews: all of the above — the adversarial/critical role
+- These roles are structurally fixed. AGY does not review. Grok does not generate.
+
+Why: a model reviewing its own output produces confirmation bias, not genuine review.
+Different model, different architecture, different training, different failure modes —
+structural independence is what makes the review meaningful.
+
+This is why the read-only constraint is injected into every Grok invocation via `agent-job.sh`.
+It is not a courtesy — it is a pipeline invariant. A Grok job that edits a file is a
+constraint violation, not a helpful shortcut.
+
 ---
 
 ## 3. The Front Door: `research-to-features` Skill

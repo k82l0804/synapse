@@ -112,6 +112,13 @@ Generate → Review (Grok) → Triage (AGY: recommendations) → Gate → Act
 **Gate approvers see AGY's recommendations, never raw Grok findings.**
 ESCALATE converts any step into an ad-hoc gate regardless of artifact type.
 
+**Reviewer-Generator Separation (architectural invariant):**
+- **AGY** generates: specs, tasks, plans, code, triage fixes
+- **Grok** reviews: all of the above
+- These roles are fixed. AGY does not review. Grok does not generate.
+- A Grok job that edits a file is a constraint violation, not a helpful shortcut.
+- The read-only enforcement in `agent-job.sh` exists because of this invariant.
+
 **Corrected pipeline step sequence:**
 ```
 research-to-features
