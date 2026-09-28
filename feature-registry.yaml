@@ -82,7 +82,7 @@ features:
   - id: S-011
     name: product-registration
     description: synapse add <path> — register a repo, create pipeline dirs, update repos.yaml + DB
-    status: draft
+    status: approved
     phase: 2
     spec: specs/S-011-product-registration.md
     created: 2026-09-28
@@ -90,7 +90,7 @@ features:
   - id: S-012
     name: daemon-engine
     description: Pipeline state machine — step executor, signal reader, run lifecycle, synapse status
-    status: draft
+    status: approved
     phase: 2
     spec: specs/S-012-daemon-engine.md
     created: 2026-09-28
@@ -98,7 +98,7 @@ features:
   - id: S-013
     name: signal-parser
     description: PIPELINE_SIGNAL and TESTER_SIGNAL parser — last-line read, regex parse, DB write
-    status: draft
+    status: approved
     phase: 2
     spec: specs/S-013-signal-parser.md
     created: 2026-09-28
@@ -106,7 +106,7 @@ features:
   - id: S-014
     name: human-gate
     description: synapse inbox / approve / reject — WAITING file, feedback notes, regeneration trigger
-    status: draft
+    status: approved
     phase: 2
     spec: specs/S-014-human-gate.md
     created: 2026-09-28
@@ -114,7 +114,7 @@ features:
   - id: S-015
     name: artifact-index
     description: DB/filesystem sync — startup scan, mismatch halt, synapse artifacts command
-    status: draft
+    status: approved
     phase: 2
     spec: specs/S-015-artifact-index.md
     created: 2026-09-28

@@ -1,7 +1,7 @@
 ---
 id: S-013
 name: signal-parser
-status: draft
+status: approved
 created: 2026-09-28
 updated: 2026-09-28
 author: research-to-features
