@@ -90,10 +90,17 @@ depends_on: []
   - Defines verdict line: `APPROVE`, `REQUEST_CHANGES`, or `NEEDS_DISCUSSION`
   - Defines required sections: Findings (by severity), Missing Tests, Architectural Risk, Verdict
   - Specifies that Grok is read-only: review docs contain findings only, no code edits
-  - Defines feedback file naming: `YYYY-MM-DDTHH-MM_feedback-{type}-{id}.md`
+  - Defines review storage locations (type subdirs under `reviews/`):
+    - Spec reviews → `reviews/spec/YYYY-MM-DDTHH-MM_F-XXX-iter{N}.md`
+    - Plan reviews → `reviews/plan/YYYY-MM-DDTHH-MM_T-XXX-iter{N}.md`
+    - Code reviews → `reviews/code/YYYY-MM-DDTHH-MM_T-XXX-iter{N}.md`
+    - Triage reports → `reviews/triage/YYYY-MM-DDTHH-MM_T-XXX-iter{N}.md`
+    - Feedback notes → `reviews/feedback/YYYY-MM-DDTHH-MM_{type}-{id}.md`
+  - Feedback notes are mandatory reading for the next specialist before regenerating
 **Test contract:**
   - MUST: a Grok review parsed by the daemon yields a clear approve/reject signal
   - MUST NOT: allow reviews without a verdict line
+  - MUST NOT: allow feedback to be empty (synapse reject requires --note)
 **Priority:** HIGH
 
 ---

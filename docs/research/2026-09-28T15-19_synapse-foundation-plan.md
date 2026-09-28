@@ -571,29 +571,48 @@ If you stop using Synapse, `rm -rf .synapse/` removes the engine.
 All your tasks, plans, specs, reviews, and research remain untouched in git.
 You can re-add to Synapse later (`synapse add ./`) and it recreates `.synapse/` from scratch.
 
+**Guiding principle for placement:**
+- `docs/` = **stable, referential** artifacts (specs are stable once approved; research never changes)
+- Root-level dirs = **pipeline artifacts with a lifecycle** (tasks, plans, reviews are produced, actioned, then archived)
+
 **Content directories — committed to git, survive tool removal:**
 
 ```
 {repo}/
 ├── AGENTS.md                           ← constitution (IDE/git convention)
-├── feature-registry.yaml               ← feature registry
+├── feature-registry.yaml               ← feature registry (config, like package.json)
 │
-├── tasks/                              ← SDLC work definition
+├── tasks/                              ← work queue: drives what happens next
 │   ├── current/phase-{N}.md            ← active sprint tasks
 │   ├── future/phase-{N}.md             ← queued phases
 │   ├── done/phase-{N}.md               ← completed phases (archived)
 │   └── deferred.md                     ← deferred items
 │
-├── plans/                              ← implementation blueprints
+├── plans/                              ← implementation blueprints: how to do it
 │   ├── current/                        ← active plans
 │   └── done/                           ← archived (moved when task done)
 │
-└── docs/                               ← SDLC documents
-    ├── specs/                          ← feature specs: F-XXX-name.md (STABLE filenames)
-    ├── research/                       ← research docs (human-authored, READ-ONLY to agents)
-    ├── reviews/                        ← review + triage + feedback docs
+├── reviews/                            ← pipeline review artifacts: what was found
+│   ├── spec/                           ← Grok spec reviews: YYYY-MM-DDTHH-MM_F-XXX-iter{N}.md
+│   ├── plan/                           ← Grok plan reviews: YYYY-MM-DDTHH-MM_T-XXX-iter{N}.md
+│   ├── code/                           ← Grok code reviews: YYYY-MM-DDTHH-MM_T-XXX-iter{N}.md
+│   ├── triage/                         ← AGY triage reports: YYYY-MM-DDTHH-MM_T-XXX-iter{N}.md
+│   └── feedback/                       ← human rejection notes (MUST be read before next iter)
+│       └── YYYY-MM-DDTHH-MM_{type}-{id}.md
+│
+└── docs/                               ← stable reference artifacts
+    ├── specs/                          ← feature specs: F-XXX-name.md (STABLE, approved)
+    ├── research/                       ← human-authored research (READ-ONLY to agents)
     └── refactor/                       ← rationale docs for refactor tasks (optional)
 ```
+
+**Why `reviews/` is NOT in `docs/`:** Reviews have a lifecycle (produced → actioned → historical),
+are pipeline outputs like plans, and `feedback/` files are operational (next specialist must read them).
+**Why `docs/specs/` IS in `docs/`:** Specs are stable once approved and referenced by path from tasks/plans.
+**Why `docs/research/` IS in `docs/`:** Human-authored, never modified after written.
+
+**At phase rotation:** optionally archive old reviews to `reviews/archive/phase-{N}/` — the daemon
+does this automatically when rotating. All reviews remain in git; they're never deleted.
 
 **`.synapse/` — operational ONLY, safe to delete:**
 
@@ -634,12 +653,12 @@ or `docs/specs/` for something else, override the defaults in `repos.yaml`:
 products:
   my-repo:
     tasks_path: .sdlc/tasks/    # override if tasks/ conflicts
+    reviews_path: .sdlc/reviews/ # override if reviews/ conflicts
     docs_path: .sdlc/docs/      # override if docs/ conflicts
     plans_path: .sdlc/plans/    # override if plans/ conflicts
 ```
 
-The daemon resolves all paths from `repos.yaml` + these overrides. Rare in practice —
-`docs/specs/` and `docs/reviews/` are distinctive enough to not conflict.
+The daemon resolves all paths from `repos.yaml` + these overrides. Rare in practice.
 
 
 ---
@@ -686,22 +705,26 @@ All artifact paths are computed from `repos.yaml` + product root. No hardcoded p
 Path keys can be overridden per product in `repos.yaml` (see conflict handling above).
 
 ```
-product_root  = resolve(synapse_root, repos.yaml[product].path)
-tasks_root    = {product_root}/{tasks_path:-tasks}
-plans_root    = {product_root}/{plans_path:-plans}
-docs_root     = {product_root}/{docs_path:-docs}
+product_root   = resolve(synapse_root, repos.yaml[product].path)
+tasks_root     = {product_root}/{tasks_path:-tasks}
+plans_root     = {product_root}/{plans_path:-plans}
+reviews_root   = {product_root}/{reviews_path:-reviews}
+docs_root      = {product_root}/{docs_path:-docs}
 
-spec_path     = {docs_root}/specs/{filename}           # F-XXX-name.md (stable)
-task_path     = {tasks_root}/current/{phase}.md
-plan_path     = {plans_root}/current/{filename}
-review_path   = {docs_root}/reviews/{filename}
-research_path = {docs_root}/research/{filename}
-registry_path = {product_root}/feature-registry.yaml
-deferred_path = {tasks_root}/deferred.md
-waiting_path  = {product_root}/.synapse/run/WAITING
-gate_path     = {product_root}/.synapse/run/GATE-{run-id}.md
-log_path      = {product_root}/.synapse/run/logs/{date}/{step}.log
-worktree_path = {product_root}/../.synapse-work/{product-name}/{run-id}-{task-id}
+spec_path      = {docs_root}/specs/{filename}              # F-XXX-name.md (stable)
+research_path  = {docs_root}/research/{filename}
+task_path      = {tasks_root}/current/{phase}.md
+plan_path      = {plans_root}/current/{filename}
+deferred_path  = {tasks_root}/deferred.md
+
+review_path    = {reviews_root}/{type}/{filename}          # type: spec|plan|code|triage
+feedback_path  = {reviews_root}/feedback/{filename}        # human rejection notes
+
+registry_path  = {product_root}/feature-registry.yaml
+waiting_path   = {product_root}/.synapse/run/WAITING
+gate_path      = {product_root}/.synapse/run/GATE-{run-id}.md
+log_path       = {product_root}/.synapse/run/logs/{date}/{step}.log
+worktree_path  = {product_root}/../.synapse-work/{product-name}/{run-id}-{task-id}
 ```
 
 ---
@@ -714,7 +737,8 @@ all references would break. Exception to the AGENTS.md timestamp rule:
 
 ```
 docs/specs/F-041-dark-mode.md                            ← stable ID-based name, never changes
-docs/reviews/2026-09-28T10-30_plan-review-iter1.md       ← timestamp OK (not referenced by path)
+reviews/plan/2026-09-28T10-30_T-001-iter1.md             ← timestamp OK (not referenced by path)
+reviews/feedback/2026-09-28T11-00_spec-F-041.md          ← feedback: read by next specialist
 plans/current/2026-09-28T10-00_plan-F-041.md             ← timestamp OK (short-lived)
 ```
 
@@ -877,21 +901,26 @@ lint:       [auto-detected or TODO]
 This repo is managed by Synapse. Pipeline artifacts live in `.synapse/`.
 
 **Artifact locations (all paths relative to repo root):**
-- Feature registry:   `.synapse/feature-registry.yaml`
-- Tasks (current):    `.synapse/tasks/current/`
-- Tasks (future):     `.synapse/tasks/future/`
-- Tasks (deferred):   `.synapse/tasks/deferred.md`
-- Plans (active):     `.synapse/plans/current/`
-- Specs:              `.synapse/docs/specs/`
-- Research:           `.synapse/docs/research/`
-- Reviews:            `.synapse/docs/reviews/`
+- Feature registry:   `feature-registry.yaml`
+- Tasks (current):    `tasks/current/`
+- Tasks (future):     `tasks/future/`
+- Tasks (deferred):   `tasks/deferred.md`
+- Plans (active):     `plans/current/`
+- Specs:              `docs/specs/`
+- Research:           `docs/research/`
+- Reviews (spec):     `reviews/spec/`
+- Reviews (plan):     `reviews/plan/`
+- Reviews (code):     `reviews/code/`
+- Triage reports:     `reviews/triage/`
+- Feedback notes:     `reviews/feedback/`
 - Operational state:  `.synapse/run/`  ← NEVER MODIFY, GITIGNORED
 
 **Specialist rules:**
-- Planner (AGY): writes to `.synapse/plans/current/` and `.synapse/tasks/`
-- Coder (AGY): writes to product source code — NOT to `.synapse/`
-- Reviewer (Grok): writes to `.synapse/docs/reviews/` — READ-ONLY to product source
-- Triage (AGY): writes auto-fixes to product source, appends to `.synapse/tasks/deferred.md`
+- Planner (AGY): writes to `plans/current/` and `tasks/`
+- Coder (AGY): writes to product source code only — NOT to `reviews/`, `docs/`, `plans/`
+- Reviewer (Grok): writes to `reviews/{type}/` — READ-ONLY to product source and all other dirs
+- Triage (AGY): writes auto-fixes to product source, appends to `tasks/deferred.md`
+- Human feedback: written to `reviews/feedback/` via `synapse reject` command
 - NEVER modify `.synapse/run/` — daemon owns that directory
 
 **Signal format (last line of your artifact output):**
@@ -1118,14 +1147,15 @@ NOTE: Plan is SUBORDINATE to Task. It is a task artifact, not a top-level entity
 ### 7.6 Review
 **Definition:** Read-only audit produced by Grok specialist.
 **Types:** task-review, plan-review, code-review
-**Storage:** `{repo}/docs/reviews/YYYY-MM-DDTHH-MM_{type}-iter{N}.md`
+**Storage:** `{repo}/reviews/{type}/YYYY-MM-DDTHH-MM_{artifact-id}-iter{N}.md`
+  where `{type}` is `spec`, `plan`, or `code`
 **Format:** Findings by [BLOCKING]/[WARNING]/[INFO] + APPROVE or REQUEST_CHANGES
 **Lifecycle:** `pending → produced → triaged`
 
 ### 7.7 Triage
 **Definition:** Decisions and auto-fixes applied to a review's findings.
 Produced by AGY Triage specialist. Emits PIPELINE_SIGNAL.
-**Storage:** `{repo}/docs/reviews/YYYY-MM-DDTHH-MM_triage-iter{N}.md`
+**Storage:** `{repo}/reviews/triage/YYYY-MM-DDTHH-MM_{task-id}-iter{N}.md`
 **Lifecycle:** `pending → produced → applied`
 
 ### 7.8 Signal
@@ -1277,7 +1307,7 @@ rotate-phase               feature marked shipped, phase archived, next phase pr
 | # | Question | Decision |
 |---|---------|----------|
 | 1 | Spec approval UX | CLI-first: `synapse inbox` shows waiting gates. Never require opening GUI to unblock work. |
-| 2 | Reject feedback | `synapse reject <run-id> --note "..."` required (empty reject forbidden). Written to `docs/reviews/..._feedback.md`. Agent MUST read before regenerating. |
+| 2 | Reject feedback | `synapse reject <run-id> --note "..."` required (empty reject forbidden). Written to `reviews/feedback/YYYY-MM-DDTHH-MM_{type}-{id}.md`. Agent MUST read before regenerating. |
 | 3 | Watchdog on `docs/intake/` | **NO.** Manual invoke only until skill is boringly reliable. |
 | 4 | Dashboard tech | **DEFERRED.** GUI deferred entirely. CLI only until daemon is proven. |
 | 5 | CLI parity | **YES — CLI IS the API.** GUI (when built) is a client. |
