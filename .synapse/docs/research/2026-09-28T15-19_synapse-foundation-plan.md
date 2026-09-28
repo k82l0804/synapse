@@ -565,50 +565,49 @@ signals (
 
 ### Per-repo file layout contract
 
-Every repo registered with Synapse MUST conform to this layout.
-All Synapse artifacts are consolidated under `.synapse/` — a single hidden folder
-that cleanly separates pipeline tooling from product code. This avoids conflicts
-with repos that already have their own `docs/`, `tasks/`, or `plans/` directories.
+**Core principle: Content belongs to the repo. Tooling machinery belongs to `.synapse/`.**
 
-**Required — created by `synapse add <path>` if missing:**
+If you stop using Synapse, `rm -rf .synapse/` removes the engine.
+All your tasks, plans, specs, reviews, and research remain untouched in git.
+You can re-add to Synapse later (`synapse add ./`) and it recreates `.synapse/` from scratch.
+
+**Content directories — committed to git, survive tool removal:**
 
 ```
 {repo}/
-├── AGENTS.md                           ← stays at root (IDE/git convention, NOT inside .synapse/)
+├── AGENTS.md                           ← constitution (IDE/git convention)
+├── feature-registry.yaml               ← feature registry
+│
+├── tasks/                              ← SDLC work definition
+│   ├── current/phase-{N}.md            ← active sprint tasks
+│   ├── future/phase-{N}.md             ← queued phases
+│   ├── done/phase-{N}.md               ← completed phases (archived)
+│   └── deferred.md                     ← deferred items
+│
+├── plans/                              ← implementation blueprints
+│   ├── current/                        ← active plans
+│   └── done/                           ← archived (moved when task done)
+│
+└── docs/                               ← SDLC documents
+    ├── specs/                          ← feature specs: F-XXX-name.md (STABLE filenames)
+    ├── research/                       ← research docs (human-authored, READ-ONLY to agents)
+    ├── reviews/                        ← review + triage + feedback docs
+    └── refactor/                       ← rationale docs for refactor tasks (optional)
+```
+
+**`.synapse/` — operational ONLY, safe to delete:**
+
+```
+{repo}/
 └── .synapse/
-    ├── feature-registry.yaml           ← feature registry for this repo
-    ├── tasks/
-    │   ├── current/                    ← active phase file(s): phase-{N}.md
-    │   ├── future/                     ← queued phase files: phase-{N}.md
-    │   ├── done/                       ← completed phase files (archived)
-    │   └── deferred.md                 ← deferred items (triage writes here via MCP)
-    ├── plans/
-    │   ├── current/                    ← active implementation plans
-    │   └── done/                       ← archived plans (moved here when task done)
-    └── docs/
-        ├── specs/                      ← feature specs: F-XXX-name.md (STABLE filenames — see below)
-        ├── research/                   ← research docs (human-authored, READ-ONLY to agents)
-        └── reviews/                    ← review + triage + feedback docs: YYYY-MM-DDTHH-MM_{type}-iter{N}.md
+    └── run/                            ← GITIGNORED — entire directory
+        ├── WAITING                     ← written when gate is waiting, deleted when resolved
+        ├── GATE-{run-id}.md           ← evidence pack per gate
+        ├── pipeline.pid               ← daemon PID for this product
+        └── logs/                      ← per-step execution logs (rotated, last 30 days)
 ```
 
-**Optional — created when needed:**
-
-```
-{repo}/.synapse/
-└── docs/
-    └── refactor/                       ← rationale docs for type=refactor tasks
-```
-
-**Operational state — inside .synapse/run/, GITIGNORED:**
-
-```
-{repo}/.synapse/
-└── run/                                ← entire directory gitignored
-    ├── WAITING                         ← written when gate is waiting, deleted when resolved
-    ├── GATE-{run-id}.md               ← evidence pack per gate
-    ├── pipeline.pid                    ← daemon PID for this product
-    └── logs/                          ← per-step execution logs (rotated, last 30 days)
-```
+Nothing of value lives in `.synapse/`. It is recreated fresh by `synapse add ./`.
 
 **Worktrees — OUTSIDE the repo, adjacent:**
 
@@ -627,6 +626,21 @@ Never inside the repo (avoids `.gitignore` and submodule conflicts).
 ```gitignore
 .synapse/run/
 ```
+
+**Conflict handling:** If a repo already has a `tasks/` (e.g. build system tasks)
+or `docs/specs/` for something else, override the defaults in `repos.yaml`:
+
+```yaml
+products:
+  my-repo:
+    tasks_path: .sdlc/tasks/    # override if tasks/ conflicts
+    docs_path: .sdlc/docs/      # override if docs/ conflicts
+    plans_path: .sdlc/plans/    # override if plans/ conflicts
+```
+
+The daemon resolves all paths from `repos.yaml` + these overrides. Rare in practice —
+`docs/specs/` and `docs/reviews/` are distinctive enough to not conflict.
+
 
 ---
 
@@ -669,14 +683,21 @@ not configured in `repos.yaml` (they're always at the same relative location).
 ### Daemon path resolution
 
 All artifact paths are computed from `repos.yaml` + product root. No hardcoded paths.
+Path keys can be overridden per product in `repos.yaml` (see conflict handling above).
 
 ```
 product_root  = resolve(synapse_root, repos.yaml[product].path)
-spec_path     = {product_root}/.synapse/docs/specs/{filename}
-task_path     = {product_root}/.synapse/tasks/current/{phase}.md
-plan_path     = {product_root}/.synapse/plans/current/{filename}
-review_path   = {product_root}/.synapse/docs/reviews/{filename}
-registry_path = {product_root}/.synapse/feature-registry.yaml
+tasks_root    = {product_root}/{tasks_path:-tasks}
+plans_root    = {product_root}/{plans_path:-plans}
+docs_root     = {product_root}/{docs_path:-docs}
+
+spec_path     = {docs_root}/specs/{filename}           # F-XXX-name.md (stable)
+task_path     = {tasks_root}/current/{phase}.md
+plan_path     = {plans_root}/current/{filename}
+review_path   = {docs_root}/reviews/{filename}
+research_path = {docs_root}/research/{filename}
+registry_path = {product_root}/feature-registry.yaml
+deferred_path = {tasks_root}/deferred.md
 waiting_path  = {product_root}/.synapse/run/WAITING
 gate_path     = {product_root}/.synapse/run/GATE-{run-id}.md
 log_path      = {product_root}/.synapse/run/logs/{date}/{step}.log
@@ -692,9 +713,9 @@ Specs are referenced by path from plans and tasks. If the filename changed on ed
 all references would break. Exception to the AGENTS.md timestamp rule:
 
 ```
-.synapse/docs/specs/F-041-dark-mode.md          ← stable ID-based name, never changes
-.synapse/docs/reviews/2026-09-28T10-30_plan-review-iter1.md  ← timestamp OK (not referenced by path)
-.synapse/plans/current/2026-09-28T10-00_plan-F-041.md        ← timestamp OK (short-lived)
+docs/specs/F-041-dark-mode.md                            ← stable ID-based name, never changes
+docs/reviews/2026-09-28T10-30_plan-review-iter1.md       ← timestamp OK (not referenced by path)
+plans/current/2026-09-28T10-00_plan-F-041.md             ← timestamp OK (short-lived)
 ```
 
 **2. `repos.yaml` is gitignored if paths would be machine-specific.**
