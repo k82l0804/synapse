@@ -94,7 +94,36 @@ GIT_TERMINAL_PROMPT=0 git status --short
 
 ---
 
-## 5. Schema Enforcement Rule
+## 5. Uniform Review Cycle (Core Principle)
+
+Every agent-generated artifact goes through the same cycle. The artifact changes. The cycle does not.
+
+```
+Generate → Review (Grok) → Triage (AGY: recommendations) → Gate → Act
+```
+
+| Artifact | Gate? | Gate approver |
+|----------|-------|---------------|
+| Specs | YES | Human (interactive) or director agent (full-auto) |
+| Tasks | No (unless ESCALATE) | Auto-resolved by triage |
+| Plans | YES | Human or director agent |
+| Code | No (unless ESCALATE) | Auto-resolved by triage + tests |
+
+**Gate approvers see AGY's recommendations, never raw Grok findings.**
+ESCALATE converts any step into an ad-hoc gate regardless of artifact type.
+
+**Corrected pipeline step sequence:**
+```
+research-to-features
+  → spec-review (Grok) → triage (AGY) → [SPEC GATE]
+  → task-gen + task-review (Grok) → triage (AGY)
+  → make-plans
+  → plan-review (Grok) → triage (AGY) → [PLAN GATE]
+  → implement
+  → test-cycle
+  → code-review (Grok) → triage (AGY)
+  → done
+```
 
 **If your output fails the schema: the job is FAILED, not "close enough."**
 

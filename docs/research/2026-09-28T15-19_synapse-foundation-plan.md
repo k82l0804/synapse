@@ -39,36 +39,80 @@ Feature (what the product can do — ≈ User Story)
 1. IDE: explore a problem space with the agent
          research docs accumulate in docs/research/
 
-2. IDE: "use research-to-features on docs/research/X.md"  ← SKILL
-         agent reads doc → extracts features (≈ user stories)
-         → registers in feature-registry.yaml (status: planned)
-         → writes spec stub for each feature: specs/F-XXX-name.md
+2. IDE: "use research-to-features on docs/research/X.md"
+         → spec stubs written to specs/
+         → review cycle runs on specs (Grok → AGY → Gate)
 
-3. IDE + agent: refine specs
-         review acceptance criteria, high-level tasks, test contracts
-         agent iterates until specs are correct
-
-4. [GATE] Spec review — YOU approve specs
+3. [SPEC GATE] YOU approve specs
          "yes, this is what I want built"
-         specs are now the source of truth
+         specs become the source of truth
 
-5. Pipeline runs (automated from here):
-         make-plans reads specs → derives detailed tasks + plans
-         [GATE] plan review (approve before implementation)
-         implement → run tests (verify spec) → code review → triage
+4. Pipeline (automated):
+         task-gen + task-review cycle (Grok → AGY → auto-resolve or escalate)
+         make-plans + plan-review cycle (Grok → AGY → Gate)
+
+5. [PLAN GATE] YOU approve plans
+         last human checkpoint before code is written
+
+6. Pipeline (automated):
+         implement → test-cycle → code-review cycle → triage
          converge until spec tests green
 
-6. GUI: watch the convergence graph
-         approve/reject gates
-         navigate artifacts agent produced
+7. IDE: watch progress, resolve escalations
+         approve/reject gates via: synapse inbox / approve / reject
 ```
 
 **You are the approver, not the creator.**
-Features, specs, tasks, plans — all created/derived by agents from your research.
-You set direction (research + feature descriptions) and approve gates (spec, plan, final).
+Agents generate. Grok reviews. AGY triages. You approve strategy.
 
 **Primary interface: CLI** (`synapse inbox`, `synapse approve`, etc.)
 GUI deferred until CLI is proven in real use.
+
+---
+
+## 2.5 Core Principle: Uniform Review Cycle
+
+> **Every agent-generated artifact goes through the same review cycle.**
+> The artifact type changes. The cycle does not.
+
+```
+Agent generates artifact
+  ↓
+Grok reviews            — quality check: complete? correct? non-contradictory?
+  ↓                       produces: [BLOCKING] / [WARNING] / [INFO] findings
+AGY triages             — reads Grok's review, produces RECOMMENDATIONS
+  ↓                       (always runs — gate approver sees pre-digested input)
+Gate                    — strategic decision: approve / reject / defer
+  ├── interactive:        Human reads AGY's recommendations, decides
+  └── full-auto:          Director agent reads AGY's recommendations, decides
+  ↓
+AGY acts                — implements approved decisions, commits
+  ↓
+Next artifact generated → repeat
+```
+
+**The artifacts, in pipeline order:**
+
+| Artifact | Gate? | Who approves |
+|----------|-------|-------------|
+| Specs | YES | Human (direction) or director agent |
+| Tasks | No (unless ESCALATE) | Auto-resolved by triage |
+| Plans | YES | Human (last checkpoint before code) or director agent |
+| Code | No (unless ESCALATE) | Auto-resolved by triage + tests |
+
+**Key insight: humans never read raw Grok findings.**
+Grok finds things. AGY decides what matters and produces recommendations.
+The gate approver — human or director agent — reads the recommendations, not the raw review.
+This makes the gate interface identical regardless of who sits at it.
+
+**The ESCALATE signal converts any step into an ad-hoc gate.**
+If AGY cannot auto-resolve a finding, it escalates — regardless of artifact type.
+The pipeline pauses until the escalation is resolved.
+
+**Interactive vs. full-auto mode:**
+- Interactive: human sits at all gates. Escalations go to `synapse inbox`.
+- Full-auto: a director agent sits at gates. Escalations halt the pipeline and alert the human.
+- The gate *interface* is identical in both modes. Only the approver changes.
 
 ---
 
