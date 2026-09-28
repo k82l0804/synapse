@@ -4,7 +4,7 @@
 development. Layer 0 freezes the protocol formats; Layer 1 fixes the 6 critical
 gaps and builds the daemon.
 
-> **Status:** 🔄 Active  
+> **Status:** ✅ Done  
 > **Updated:** 2026-09-28  
 > **All paths are relative to the synapse repo root.**
 
@@ -251,19 +251,19 @@ depends_on: [T-L0-4]
 
 | Task | Description | Type | Status |
 |------|-------------|------|--------|
-| T-L0-1 | specs/feature-spec-format.md | chore | ⬜ todo |
-| T-L0-2 | specs/task-format.md | chore | ⬜ todo |
-| T-L0-3 | specs/plan-format.md | chore | ⬜ todo |
-| T-L0-4 | specs/pipeline-signal-protocol.md | chore | ⬜ todo |
-| T-L0-5 | specs/review-format.md | chore | ⬜ todo |
-| T-L0-6 | package.json + AGENTS.md | chore | ⬜ todo |
-| T-L0-7 | skills/research-to-features/SKILL.md | chore | ⬜ todo (depends: L0-1, L0-2) |
-| T-1-1 | Grok read-only enforcement | chore | ⬜ todo (depends: L0-6) |
-| T-1-2 | Grok workspace dirs | chore | ⬜ todo (depends: 1-1) |
-| T-1-3 | Typecheck gate in triage | chore | ⬜ todo (depends: L0-5) |
-| T-1-4 | Deferred items in tasks/deferred/ | chore | ⬜ todo (depends: L0-5) |
-| T-1-5 | Test contract in make-plans | chore | ⬜ todo (depends: L0-3, L0-4) |
-| T-1-6 | TESTER_SIGNAL + tester step | chore | ⬜ todo (depends: L0-4) |
+| T-L0-1 | specs/feature-spec-format.md | chore | ✅ done |
+| T-L0-2 | specs/task-format.md | chore | ✅ done |
+| T-L0-3 | specs/plan-format.md | chore | ✅ done |
+| T-L0-4 | specs/pipeline-signal-protocol.md | chore | ✅ done |
+| T-L0-5 | specs/review-format.md | chore | ✅ done |
+| T-L0-6 | package.json + AGENTS.md | chore | ✅ done |
+| T-L0-7 | skills/research-to-features/SKILL.md | chore | ✅ done |
+| T-1-1 | Grok read-only enforcement | chore | ✅ done |
+| T-1-2 | Grok workspace dirs | chore | ✅ done |
+| T-1-3 | Typecheck gate in triage | chore | ✅ done |
+| T-1-4 | Deferred items in tasks/deferred/ | chore | ✅ done |
+| T-1-5 | Test contract in make-plans | chore | ✅ done |
+| T-1-6 | TESTER_SIGNAL + tester step | chore | ✅ done |
 
 ---
 

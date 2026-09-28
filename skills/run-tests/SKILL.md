@@ -4,9 +4,9 @@ description: >-
   Use this skill for any command expected to take longer than ~10 seconds:
   test suites, typecheck, builds, git operations, agent delegation, benchmark
   runs. Push jobs to the Fox Job Scheduler, immediately continue with other
-  parallelizable work, then come back to check results. Key capability: delegate
-  complex subtasks to agy or grok agents via the scheduler while you work on
-  other things in parallel. Dashboard at http://localhost:4040/.
+  parallelizable work, then come back to check results. When acting as the
+  test-cycle step in the Synapse pipeline, emit a TESTER_SIGNAL as the
+  absolute last line of your output artifact.
 ---
 
 # Run Long-Running Commands via Job Scheduler
@@ -311,3 +311,62 @@ grok:review     Grok code review
 grok:plan       Grok make-plans
 grok:implement  Grok implement-plan
 ```
+
+---
+
+## Producing a TESTER_SIGNAL (Pipeline test-cycle step) — T-1-6
+
+When this skill is invoked as the **test-cycle step** of the Synapse pipeline
+(i.e., running tests for a specific task and writing a test output artifact),
+you MUST emit a `TESTER_SIGNAL` as the absolute last line of your output.
+
+**Before starting the test-cycle:** read `specs/pipeline-signal-protocol.md`
+for the complete grammar and parser regex. Quick reference:
+
+```
+<!-- TESTER_SIGNAL: PASS={p} FAIL={f} SKIPPED={s} TYPECHECK={green|red} -->
+```
+
+### Test-cycle vs Fix-tests — they are SEPARATE pipeline steps
+
+| Step | What happens | Who drives it |
+|------|-------------|---------------|
+| `test-cycle` | Run tests, capture results, emit TESTER_SIGNAL | This skill (run-tests) |
+| `fix-tests` | Read the signal, fix failing tests | Coder (implement-plan) |
+
+**Do NOT mix these steps.** The test-cycle only runs and reports.
+If tests fail, emit the signal with the counts and let the pipeline route to fix-tests.
+
+### Test-cycle procedure
+
+1. Run typecheck:
+   ```bash
+   GIT_TERMINAL_PROMPT=0 timeout 45s bun run typecheck 2>&1
+   ```
+   Record: `green` if exit 0, `red` if exit non-zero.
+
+2. Run the relevant test suite:
+   ```bash
+   GIT_TERMINAL_PROMPT=0 CI=true timeout 60s bun test test/{relevant}/ 2>&1
+   ```
+   Parse output for: pass count, fail count, skipped count.
+
+3. Write the test output artifact. Parse the results, then emit the signal
+   as the **absolute last line** — nothing after it:
+
+   ```
+   <!-- TESTER_SIGNAL: PASS=42 FAIL=0 SKIPPED=0 TYPECHECK=green -->
+   ```
+
+### Signal examples
+
+All green: `<!-- TESTER_SIGNAL: PASS=42 FAIL=0 SKIPPED=0 TYPECHECK=green -->`
+
+Failing tests: `<!-- TESTER_SIGNAL: PASS=39 FAIL=3 SKIPPED=0 TYPECHECK=green -->`
+
+Typecheck red: `<!-- TESTER_SIGNAL: PASS=0 FAIL=0 SKIPPED=0 TYPECHECK=red -->`
+
+> [!CAUTION]
+> The TESTER_SIGNAL MUST be the absolute last line. Anything after it causes
+> the daemon to treat the signal as absent → job marked TASK_FAILED.
+

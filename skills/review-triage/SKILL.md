@@ -1,147 +1,187 @@
 ---
 name: review-triage
 description: >-
-  Use this skill to read a Grok review doc (task-review, plan-review, or
-  code-review) from docs/reviews/ and act as the technical decision-maker.
-  Categorize each finding, decide what to fix vs defer vs escalate, document
-  your decisions, then fix the auto-fixable items.
+  Reads a Grok review doc (spec-review, plan-review, or code-review) from
+  reviews/{type}/ and acts as the technical decision-maker. Categorizes each
+  finding, decides what to fix vs defer vs escalate, runs typecheck before
+  committing any auto-fix, writes deferred items to tasks/deferred/, and emits
+  a conforming PIPELINE_SIGNAL as the last line of the triage report.
 ---
 
 # Review Triage
 
-You are the **technical lead** for the Fox development pipeline. Grok has just
-completed a review and written a review document to `docs/reviews/`. Your job is
-to read that review, reason about each finding, and decide what to do.
+You are the **technical lead** for the Synapse pipeline. Grok has just completed
+a review and written a review document. Your job: read it, decide what to do with
+each finding, implement auto-fixes, and emit a conforming triage report.
 
-This is the decision layer between Grok's recommendations and action.
+You are the decision layer between Grok's recommendations and action.
+
+**Before starting:** Read `specs/review-format.md` for the full review and triage
+format specification, including severity rules, verdict definitions, and signal grammar.
+
+---
+
+## Step 0: Check for Feedback
+
+Before reading the review, check `reviews/feedback/` for any feedback files
+relevant to this task or artifact. If any exist, **read them first** — they
+contain rejection reasons from a previous human review of this same artifact.
+You MUST address feedback before producing your triage.
+
+---
 
 ## Step 1: Find and Read the Review
 
-Find the most recent review document in `docs/reviews/` matching the review type
-specified in your context (task-review, plan-review, or code-review).
+Find the most recent review document matching the type specified in your context:
 
-Read it completely.
+- Spec reviews → `reviews/spec/`
+- Plan reviews → `reviews/plan/`
+- Code reviews → `reviews/code/`
+
+Use the latest `iter{N}` file for the relevant artifact ID.
+
+Read the review completely. Note the verdict: `APPROVE`, `REQUEST_CHANGES`, or
+`NEEDS_DISCUSSION`. If the verdict is `APPROVE` and there are no `[BLOCKING]`
+findings, write a minimal triage report and emit `PIPELINE_SIGNAL STATUS=DONE`.
+
+---
 
 ## Step 2: Categorize Each Finding
 
-For each `[BLOCKING]`, `[WARNING]`, and `[INFO]` finding, categorize it as:
+For each `[BLOCKING]`, `[WARNING]`, and `[INFO]` finding:
 
 | Category | Meaning | Action |
-|:---------|:--------|:-------|
-| **AUTO-FIX** | Clear, bounded, unambiguous — you can fix it confidently | Fix it now |
-| **DEFER** | Valid point but out of scope for this phase | Add to tasks/deferred.md |
-| **REJECT** | Grok is wrong, outdated info, or misunderstood the code | Document why, move on |
-| **ESCALATE** | Requires human judgment — ambiguous, risky, or architectural disagreement | Write escalation note, pipeline pauses |
+|----------|---------|--------|
+| **AUTO-FIX** | Clear, bounded, unambiguous — you can fix it confidently | Fix now, then typecheck |
+| **DEFER** | Valid but out of scope for this phase | Create file in `tasks/deferred/` |
+| **REJECT** | Grok is wrong, outdated info, or misunderstood | Document why, move on |
+| **ESCALATE** | Requires human judgment — ambiguous, risky, or architectural | Write escalation note |
 
-Rules for categorization:
-- `[BLOCKING]` findings must be resolved (fixed, rejected with reasoning, or escalated)
-- `[WARNING]` findings should be fixed if AUTO-FIX, otherwise deferred
-- `[INFO]` findings: note them, no action required unless trivial
+**Rules:**
+- `[BLOCKING]` MUST be resolved as AUTO-FIX or ESCALATE (never DEFER without human approval)
+- `[WARNING]` should be AUTO-FIX or DEFER
+- `[INFO]` → REJECT or ACKNOWLEDGE only — no action required
+- "I'm not sure" → ESCALATE, always
 
-## Step 3: Write a Triage Decision Document
+---
 
-Write a triage doc to `docs/reviews/` with filename:
-`YYYY-MM-DDTHH-MM_triage-<review-type>-phase-<phase>.md`
+## Step 3: Write the Triage Report
 
-Structure:
-```markdown
-# Review Triage — <Review Type> Phase <X>
+Write a triage report to `reviews/triage/YYYY-MM-DDTHH-MM_{task-id}-iter{N}.md`
+following the format in `specs/review-format.md` Section 3.
 
-**Source Review**: <filename of Grok's review>
-**Date**: <ISO timestamp>
+Include a disposition entry for every finding in the source review.
 
-## Triage Decisions
+---
 
-### AUTO-FIX (fixing now)
-- [BLOCKING/WARNING] <finding summary> → **FIXING**: <what I will do>
+## Step 4: Apply AUTO-FIX Items (with Typecheck Gate)
 
-### DEFER (adding to backlog)
-- [BLOCKING/WARNING] <finding summary> → **DEFER**: <why, which task file>
+For each AUTO-FIX item, in order:
 
-### REJECT (not acting on)
-- [finding summary] → **REJECT**: <reasoning>
+1. Make the minimal targeted change needed — do not fix unrelated things
+2. If a fix reveals a deeper problem: re-classify as ESCALATE, do NOT proceed
+3. **After all AUTO-FIX changes are applied:**
 
-### ESCALATE (needs human)
-- [finding summary] → **ESCALATE**: <why this needs human judgment>
-
-## Summary
-- AUTO-FIX: N findings
-- DEFER: N findings
-- REJECT: N findings
-- ESCALATE: N findings (pipeline will pause if > 0)
+```bash
+GIT_TERMINAL_PROMPT=0 timeout 45s bun run typecheck
 ```
 
-## Step 4: Act on AUTO-FIX Items
+**Typecheck gate (T-1-3):**
+- If typecheck exits **green** (0 errors): proceed to commit
+- If typecheck exits **red**: re-classify ALL pending AUTO-FIX items as ESCALATE.
+  Do NOT commit. Record the typecheck error in the triage report.
 
-Fix each AUTO-FIX item in order. For each fix:
-- Make the minimal targeted change needed
-- Don't fix things beyond what's specified
-- If a fix reveals a deeper problem, escalate rather than rabbit-hole
+**Commit only after green typecheck:**
+```bash
+GIT_TERMINAL_PROMPT=0 git add -A
+GIT_TERMINAL_PROMPT=0 git commit -m "fix: triage auto-fix for {task-id} iter{N}
 
-For task review findings: fix the task files in `tasks/current/`
-For plan review findings: fix the plan files in `plans/current/`
-For code review findings: fix the source code in `fox-code-cli/src/`
+{Brief list of changes made}"
+```
 
-## Step 5: Handle DEFER Items
+Record the commit hash in the triage report.
 
-For each DEFER finding, add a brief note to the appropriate tasks file:
-- `tasks/deferred.md` for things to do someday
-- `tasks/future/` for things planned in a future phase
+---
+
+## Step 5: Handle DEFER Items (T-1-4)
+
+For each DEFER finding, create a **new** timestamped file in `tasks/deferred/`.
+**Never append to an existing file.** Each deferred item is its own file.
+
+**Filename:** `tasks/deferred/YYYY-MM-DDTHH-MM_{task-id}_{short-description}.md`
+
+**Content:**
+```markdown
+# Deferred: {short description}
+
+**Origin:** reviews/{type}/YYYY-MM-DDTHH-MM_{artifact-id}-iter{N}.md  
+**Finding:** [{severity}] {title}  
+**Deferred by:** AGY triage iter{N}  
+**Date:** YYYY-MM-DDTHH:MM  
+
+## Finding Detail
+
+{Copy of the finding text from the review, verbatim}
+
+## Suggested Future Action
+
+{What should be done when this is picked up — be specific enough that a future
+agent can act on it without reading the original review}
+```
+
+Add the deferred file path to the triage report under the DEFER disposition.
+
+---
 
 ## Step 6: Handle ESCALATE Items
 
-If there are any ESCALATE items, write a clear escalation summary explaining:
-- What the issue is
-- Why you can't resolve it autonomously
-- What decision needs to be made
+For each ESCALATE item, write clearly in the triage report:
+- What the issue is (verbatim from review finding)
+- Why you cannot resolve it autonomously
+- What decision is needed from the human
 - Your recommendation if you have one
 
-The pipeline will pause at this point for human review.
+The pipeline pauses on any ESCALATE. The human resolves via `synapse inbox`.
 
-## Step 7: Write Machine-Readable Pipeline Signal
+---
 
-**This is mandatory.** At the very end of your triage document, write this exact line
-(replacing N with actual counts):
+## Step 7: Emit PIPELINE_SIGNAL
+
+The signal MUST be the **absolute last line** of the triage report. No content after it.
+
+Determine STATUS from the outcome:
+
+| Condition | STATUS |
+|-----------|--------|
+| All BLOCKING resolved (auto-fixed or rejected), no ESCALATE | `DONE` |
+| Some findings deferred or warned but no BLOCKING remaining | `DONE` |
+| Typecheck red after auto-fix → re-classified as ESCALATE | determined by ESCALATE count |
+| Any ESCALATE item | `PARTIAL` |
+| No fixes possible, all BLOCKING escalated | `FAILED` |
+
+Set `AUTO-FIX=N` to the count of changes actually committed.
+Set `ESCALATE=M` to the count of ESCALATE items in this pass.
 
 ```
-<!-- PIPELINE_SIGNAL: AUTO-FIX=N ESCALATE=M -->
+<!-- PIPELINE_SIGNAL: STATUS=DONE AUTO-FIX=2 ESCALATE=0 -->
 ```
 
-Example — 2 items were fixed, 0 escalations:
-```
-<!-- PIPELINE_SIGNAL: AUTO-FIX=2 ESCALATE=0 -->
-```
+---
 
-Example — clean pass (nothing to fix):
-```
-<!-- PIPELINE_SIGNAL: AUTO-FIX=0 ESCALATE=0 -->
-```
+## Iteration Limits
 
-Example — human needed:
-```
-<!-- PIPELINE_SIGNAL: AUTO-FIX=0 ESCALATE=1 -->
-```
+- **iter1, iter2**: Normal pass. Auto-fix what you can, escalate what you can't.
+- **iter3**: Final pass. Any remaining BLOCKING MUST be escalated, not deferred.
+- **iter4+**: Do not proceed. Set `STATUS=FAILED`, escalate the entire task.
 
-The pipeline reads this signal to decide whether to loop (AUTO-FIX > 0),
-pause for human (ESCALATE > 0), or mark the review as **passed** (both = 0).
-
-## Step 8: Commit
-
-If you made any changes:
-```bash
-GIT_TERMINAL_PROMPT=0 git add -A
-GIT_TERMINAL_PROMPT=0 git commit -m "triage(<review-type>): fix AUTO-FIX findings from Grok review
-
-AUTO-FIX: N items fixed
-DEFER: N items added to backlog
-REJECT: N items (see triage doc)"
-```
+---
 
 ## Important Rules
 
-- **Don't gold-plate**: Only fix what Grok flagged. Don't refactor unrelated things.
-- **Don't rabbit-hole**: If fixing one thing reveals three more problems, ESCALATE.
-- **Be decisive**: Make a call on every finding. "I'm not sure" → ESCALATE.
-- **Document rejections**: If Grok is wrong, say why clearly in the triage doc.
-- **Prefer minimal fixes**: A targeted 5-line fix beats a 100-line refactor.
-- **Always write the PIPELINE_SIGNAL**: The pipeline cannot continue without it.
+- **Typecheck before commit** — always. No exceptions. (T-1-3)
+- **Deferred items = new files in tasks/deferred/** — never append to existing files. (T-1-4)
+- **Don't gold-plate** — only fix what Grok flagged. Don't refactor unrelated things.
+- **Don't rabbit-hole** — if fixing reveals 3 more problems → ESCALATE.
+- **Be decisive** — make a call on every finding.
+- **Document rejections** — if Grok is wrong, say why clearly.
+- **Signal is mandatory** — pipeline cannot continue without it as the last line.
