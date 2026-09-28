@@ -112,12 +112,16 @@ Generate → Review (Grok) → Triage (AGY: recommendations) → Gate → Act
 **Gate approvers see AGY's recommendations, never raw Grok findings.**
 ESCALATE converts any step into an ad-hoc gate regardless of artifact type.
 
-**Reviewer-Generator Separation (architectural invariant):**
+**Reviewer-Generator Separation (strongly recommended default):**
 - **AGY** generates: specs, tasks, plans, code, triage fixes
 - **Grok** reviews: all of the above
-- These roles are fixed. AGY does not review. Grok does not generate.
-- A Grok job that edits a file is a constraint violation, not a helpful shortcut.
-- The read-only enforcement in `agent-job.sh` exists because of this invariant.
+- These role assignments are configurable defaults — not enforced by the system
+- Deviating defeats the purpose: a model reviewing its own output produces confirmation bias
+
+**What is actually enforced by the system (not just recommended):**
+- Grok read-only: `agent-job.sh` injects the constraint into every Grok invocation — a Grok job that edits a file is a system-level violation
+- Signal schema: the daemon rejects any job whose output artifact does not have a valid signal as its absolute last line — `SIGNAL_ABSENT` or `SCHEMA_VIOLATION` halts the run
+- Everything else (role assignments, model tiers, agent tiers) is a **recommended default** — overridable per product or pipeline run in daemon config
 
 **Corrected pipeline step sequence:**
 ```

@@ -131,9 +131,238 @@ constraint violation, not a helpful shortcut.
 
 ---
 
+## 2.6 Core Principle: Capability-Task Matching
+
+> **Model capability must match cognitive demand.**
+> The pipeline has four distinct cognitive modes. Over-provisioning wastes cost and latency.
+> Under-provisioning produces output that passes schema validation but fails on judgment.
+
+### Four cognitive modes
+
+| Mode | Cognitive demand | Steps | Default model |
+|------|-----------------|-------|---------------|
+| **Synthesis** | Highest — interpret unstructured research, make judgment calls about what matters, formalize ambiguity into precise contracts | `research-to-features`, spec writing/refinement | **Opus** |
+| **Critical analysis** | High — find what's wrong in something that looks correct, identify gaps, catch architectural violations | spec-review, task-review, plan-review, code-review | **Grok (frontier)** |
+| **Structured reasoning** | Medium-high — derive tasks from specs, create plans, triage review findings, make recommendations | task-gen, make-plans, triage (AGY) | **Sonnet** |
+| **Mechanical execution** | Low-medium — implement from a complete, detailed plan | implement, test-cycle | **Flash or Sonnet** |
+
+### Why Synthesis is Opus
+
+Research docs are unstructured, ambiguous, and dense. Extracting features means:
+deciding what counts as a user-facing capability (not a task), ranking by infra dependency,
+writing acceptance criteria that will drive all downstream work. This is the highest-leverage
+step — a bad feature extraction propagates through everything. Frontier reasoning required.
+
+### Why reviews are never downgraded
+
+A Flash-executed code review will miss things that matter. Reviews have no schema that
+catches failure — a review that finds nothing is indistinguishable from a review that
+missed everything. You can only trust a review proportionally to the capability of the
+reviewer. Review steps are always Grok frontier. This is not configurable.
+
+### The implementation tier decision rule
+
+Implementation model is not fixed — it is determined by plan quality:
+
+```
+plan is highly detailed + work is mechanical (bash, boilerplate, type stubs)
+  → Flash is sufficient
+
+plan requires judgment calls not fully captured in deliverables
+  → Sonnet required
+```
+
+A Sonnet-quality plan detailed enough for Flash to execute is the optimal outcome:
+Sonnet's reasoning cost paid once at planning time, Flash's speed/cost paid at execution.
+This is why plan quality (from make-plans) determines execution cost downstream.
+
+### Model assignment table (configurable in agent-job.sh)
+
+```
+Step                  Specialist   Model
+────────────────────  ──────────   ─────────────────
+research-to-features  agy          claude-opus-4
+spec-write/refine     agy          claude-opus-4
+spec-review           grok         grok-4 (frontier)
+triage (specs)        agy          claude-sonnet-4-5
+task-gen              agy          claude-sonnet-4-5
+task-review           grok         grok-4 (frontier)
+triage (tasks)        agy          claude-sonnet-4-5
+make-plans            agy          claude-sonnet-4-5
+plan-review           grok         grok-4 (frontier)
+triage (plans)        agy          claude-sonnet-4-5
+implement (complex)   agy          claude-sonnet-4-5
+implement (simple)    agy          gemini-2.5-flash
+test-cycle            agy          gemini-2.5-flash
+code-review           grok         grok-4 (frontier)
+triage (code)         agy          claude-sonnet-4-5
+```
+
+These defaults are overridable per product and per pipeline run.
+The daemon reads model assignment from product config; `agent-job.sh` receives it as `$MODEL`.
+
+---
+
+## 2.7 Named Roles
+
+Every pipeline step is executed by an agent in a named role. Roles define responsibilities,
+constraints, and minimum capability requirements. An agent may play different roles in
+different steps — but never the Generator and Reviewer role for the same artifact.
+
+### The five roles
+
+---
+
+**Architect** — synthesis and design
+- **Does:** research-to-features, spec drafting/refinement, spec triage (fixing specs after review)
+- **Does not:** review, implement code
+- **Default agent:** AGY | **Default model:** Opus
+- **Why Opus:** highest cognitive demand in the pipeline — interprets unstructured research,
+  makes judgment calls that propagate through everything downstream, formalizes ambiguity into
+  precise contracts. A bad feature extraction corrupts the entire pipeline. No model downgrade.
+
+---
+
+**Reviewer** — adversarial analysis
+- **Does:** spec-review, task-review, plan-review, code-review — *all* reviews, nothing else
+- **Does not:** generate artifacts, edit files, commit, run commands
+- **Default agent:** Grok | **Default model:** Grok frontier
+- **Enforced:** read-only. The system injects a read-only constraint into every Grok invocation via `agent-job.sh`. A Reviewer job that edits a file is a system-level violation, not just a guideline.
+- **Why Grok:** structural independence from the Generator. Different model, different
+  architecture, different training, different failure modes. Grok reviews because it never
+  generates. This is strongly recommended — not enforced by the system, but deviating defeats the purpose of the review cycle.
+
+---
+
+**Planner** — structured derivation and triage
+- **Does:** task-gen, make-plans, task triage recommendations, plan triage recommendations,
+  code triage recommendations (the *recommendation* phase — deciding what to fix, not fixing it)
+- **Does not:** review, write production code
+- **Default agent:** AGY | **Default model:** Sonnet
+- **Why Sonnet:** structured reasoning from well-defined inputs. The inputs (specs, review
+  findings) are already organized; the output (tasks, plans, recommendations) is structured.
+  Creative synthesis is not required — careful derivation is.
+- **Note:** Spec triage is Architect role, not Planner — fixing a spec requires architectural
+  judgment equal to what wrote it.
+
+---
+
+**Coder** — execution
+- **Does:** implement from plans, write tests, apply approved triage fixes (the *execution*
+  phase — actually making the changes the Planner recommended)
+- **Does not:** review, design, plan
+- **Default agent:** AGY | **Default model:** Flash (mechanical) or Sonnet (judgment required)
+- **Model decision rule:**
+  - Plan is highly detailed + work is mechanical → Flash sufficient
+  - Plan leaves judgment calls not fully specified → Sonnet required
+- **Key insight:** The Planner's job is to write plans detailed enough that Flash can execute
+  them. Plan quality determines execution cost downstream.
+
+---
+
+**Approver** — strategic gate
+- **Does:** approve or reject at spec gates and plan gates; resolve escalations
+- **Does not:** generate, review, implement
+- **Default:** Human (interactive mode) | Director agent (full-auto mode)
+- **Input:** Architect or Planner triage recommendations — never raw Reviewer findings
+- **Gate interface is identical regardless of mode.** Only the approver changes.
+
+---
+
+### Role → pipeline step mapping
+
+```
+Pipeline Step         Role          Agent    Model
+────────────────────  ────────────  ───────  ────────────────
+research-to-features  Architect     AGY      Opus
+spec-write/refine     Architect     AGY      Opus
+spec-review           Reviewer      Grok     Grok frontier
+spec-triage           Architect     AGY      Opus
+[SPEC GATE]           Approver      Human / Director
+task-gen              Planner       AGY      Sonnet
+task-review           Reviewer      Grok     Grok frontier
+task-triage           Planner       AGY      Sonnet
+make-plans            Planner       AGY      Sonnet
+plan-review           Reviewer      Grok     Grok frontier
+plan-triage           Planner       AGY      Sonnet
+[PLAN GATE]           Approver      Human / Director
+implement             Coder         AGY      Flash / Sonnet
+test-cycle            Coder         AGY      Flash
+code-review           Reviewer      Grok     Grok frontier
+code-triage (rec.)    Planner       AGY      Sonnet
+code-triage (exec.)   Coder         AGY      Flash / Sonnet
+```
+
+---
+
+## 2.8 Agent Tiers and LLM Tiers
+
+Capability is two-dimensional: `Agent Tier × LLM Tier`.
+A T3 agent with Opus is not the same as a T1 agent with Sonnet.
+The scaffolding, context management, and tool reliability are independent of the model.
+
+All assignments below are **recommended defaults**. Any step can be overridden per product or pipeline run in the daemon config. Deviating from recommendations is permitted — consequences are documented below.
+
+### LLM Tiers
+
+| Tier | Models | Cognitive Strength |
+|------|--------|-------------------|
+| **L1 — Frontier reasoning** | Claude Opus 4, Grok 4 | Deep synthesis, architectural judgment, ambiguity resolution |
+| **L2 — Strong structured** | Claude Sonnet 4.5, Gemini 2.5 Pro | Structured derivation, planning, triage, complex code |
+| **L3 — Fast execution** | Gemini 2.5 Flash, Claude Haiku | Mechanical execution from detailed specs, test running, boilerplate |
+
+### Agent Tiers
+
+| Tier | Agents | Strengths | Limits |
+|------|--------|-----------|--------|
+| **A1 — IDE/CLI** | AGY, Grok | Multi-step, full tool use, large coherent context, error recovery, git integration | Cost, latency |
+| **A2 — Coding agents** | Aider, Goose | Solid file-level coding, git-aware, follows detailed plans reliably | Limited planning, weaker at abstraction, context drift on long tasks |
+| **A3 — Capable** | Kilo/KiloCode, Cursor baseline | Mechanical tasks with explicit instructions, low setup cost, fast | Context drift on complex tasks, weaker tool use, poor error recovery |
+
+### Recommended minimum agent tier per role
+
+| Role | Min Agent Tier | Min LLM Tier | Notes |
+|------|--------------|--------------|-------|
+| Architect | A1 | L1 | Requires coherent large-context synthesis. A2/A3 drift on abstract work. |
+| Reviewer | A1 (Grok only) | L1 | Strongly recommended — deviating defeats Reviewer-Generator Separation. The read-only constraint is enforced; the agent assignment is configurable. |
+| Planner | A1 | L2 | A2 possible if plan templates are rigidly structured; A3 unreliable. |
+| Coder (complex) | A1 or A2 | L2 | Aider/Goose viable when plan is detailed and task is well-bounded. |
+| Coder (mechanical) | A1, A2, or A3 | L3 | **Kilo's natural home.** Template + explicit spec + clear test = reliable. |
+| Test runner | A2 or A3 | L3 | Kilo can run tests and parse output. No reasoning required. |
+| Approver (Director) | A1 | L1 | Strategic decisions require full context, coherent judgment, and tool access. |
+
+### The Kilo principle
+
+Kilo and similar T3 agents are not weak — they are appropriately matched to mechanical work.
+The failure mode is not using Kilo; it is using Kilo for work that requires judgment.
+
+A T3 agent on a mechanical task with a highly detailed plan will produce correct output.
+A T3 agent on an underspecified task will produce output that *looks* correct and fails
+on intent — and it will not detect the mismatch.
+
+**This is why plan quality is a first-class concern:** plans are not just for T1 agents.
+A Planner writing plans must write them to the capability of the intended Coder agent.
+If the Coder is Kilo, the plan must leave zero judgment calls open.
+
+### Capability degradation warning
+
+```
+Scenario: T1/L1 plan, T3/L3 coder
+  Result: usually fine — plan is over-specified for the coder, nothing is lost
+
+Scenario: T1/L2 plan (judgment required), T3/L3 coder
+  Result: Kilo produces plausible-looking output; misses intent; tests may still pass
+  Detection: only caught by code-review (Reviewer) or failing spec tests
+
+Scenario: T3/L3 agent in Reviewer role
+  Result: review misses subtle issues; looks like "all clear" — cannot be detected
+  Mitigation: assign Grok as Reviewer (strongly recommended default). Configurable but not advisable.
+```
+
+---
+
 ## 3. The Front Door: `research-to-features` Skill
 
-**The pipeline entry point.** Converts raw research into features, specs, and tasks.
 
 **Why features first (not tasks first):**
 - Features ≈ User Stories — they describe WHAT the product can do, from the user's perspective
