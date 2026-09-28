@@ -730,16 +730,161 @@ The existing `synapse/tasks/`, `synapse/docs/`, `synapse/plans/` directories
 need to be migrated to `synapse/.synapse/` when the convention is adopted.
 This is T-L0-6 (repo initialization) — the first dogfood.
 
-**7. AGENTS.md section discipline.**
-`synapse add` never overwrites an existing AGENTS.md. If a repo already has
-AGENTS.md (e.g., fox has a detailed one), the user adds a Synapse section manually:
+**7. AGENTS.md — the repo contract every specialist reads first.**
+
+Every specialist agent reads `AGENTS.md` before touching any file. It is the
+primary source of repo-specific knowledge. Without it, agents guess at conventions
+and produce code that doesn't fit the codebase.
+
+`AGENTS.md` has two parts:
+
+- **Repo section** — authored by the repo owner. Describes source layout, conventions,
+  commands, architectural rules. Must be written by a human who knows the codebase.
+  Agents are good at reading specs and writing code, but they cannot infer
+  unstated conventions (import aliases, which layer an API call belongs to,
+  what the test harness expects). These must be written down.
+
+- **Synapse pipeline section** — auto-injected by `synapse add`. Describes how this
+  repo fits into the pipeline (where artifacts live, what specialists write where,
+  what they must not touch). Updated if the Synapse layout changes.
+
+**How `synapse add` handles AGENTS.md:**
+
+```
+Case A: No AGENTS.md exists
+  → Create AGENTS.md from full template (repo section + Synapse section)
+  → Print: "AGENTS.md created. Fill in the repo section TODOs before starting any pipeline."
+
+Case B: AGENTS.md exists, no Synapse section
+  → Append the Synapse pipeline section to the end
+  → Print: "Synapse pipeline section appended to your existing AGENTS.md."
+
+Case C: AGENTS.md exists, Synapse section already present
+  → Do nothing. Already set up.
+  → Print: "AGENTS.md already has a Synapse section. No changes made."
+```
+
+**`synapse add` auto-detects from the repo and pre-fills `repos.yaml`:**
+
+| Detected | Pre-filled in repos.yaml |
+|----------|--------------------------|
+| `package.json` | language, runtime, reads `scripts` for build/test/lint |
+| `bun.lockb` present | runtime: bun |
+| `Cargo.toml` | language: rust, cargo commands |
+| `pyproject.toml` | language: python, reads tool.scripts |
+| `go.mod` | language: go |
+
+Auto-detected values are annotated `# auto-detected` so you can verify them.
+
+**The `repos.yaml` extended format:**
+
+```yaml
+products:
+  fox-cli:
+    path: ../fox-code-cli          # relative to synapse root — portable
+    language: typescript           # auto-detected
+    runtime: bun                   # auto-detected
+    install_command: bun install
+    build_command: bun run build
+    test_command: bun run test:smoke
+    typecheck_command: bun run typecheck
+    lint_command: bun run lint
+    entry_point: src/index.ts      # optional — helps agents orient
+    src_dirs: [src, packages]      # optional — helps agents find code
+    test_pattern: "**/*.test.ts"   # optional — helps tester agent
+```
+
+**The full AGENTS.md template `synapse add` generates:**
 
 ```markdown
-## Synapse Pipeline (added by synapse add)
+# AGENTS.md — [repo-name]
+
+<!-- ================================================================
+  REPO SECTION — written by you, read by every specialist agent.
+  Fill in all TODOs before starting any Synapse pipeline.
+  Agents cannot infer conventions they haven't been told.
+================================================================ -->
+
+## Language & Runtime
+Language: [TODO: typescript | python | rust | go | ...]
+Runtime:  [TODO: bun | node | cargo | poetry | ...]
+
+## Source Layout
+<!-- TODO: Describe where code lives. Be specific — agents use this to
+     find the right file before editing. Example: -->
+src/:          main application code
+packages/:     internal packages (if monorepo)
+tests/:        test files
+<!-- Add subdirectory descriptions as needed -->
+
+## Commands
+<!-- Auto-populated by synapse add. Verify before running. -->
+install:    [auto-detected or TODO]
+build:      [auto-detected or TODO]
+test:       [auto-detected or TODO]
+typecheck:  [auto-detected or TODO]
+lint:       [auto-detected or TODO]
+
+## Key Conventions
+<!-- TODO: What must every agent know before touching this codebase?
+     This is the most important section. Examples: -->
+<!-- - All imports use @/* alias (maps to src/*) -->
+<!-- - Tool registration goes through Tool.make() — never bypass -->
+<!-- - Never call Layer.provide() inside request handlers -->
+<!-- - Config files are in order of precedence: a.json > b.json -->
+
+## Architectural Rules
+<!-- TODO: Constraints that protect the system's integrity.
+     If an agent violates these, the code review should catch it.
+     Write them as MUST / MUST NOT statements. -->
+<!-- MUST: ... -->
+<!-- MUST NOT: ... -->
+
+## Anti-Hang Rules (testing)
+<!-- Tests must always be non-interactive. Add repo-specific rules. -->
+- Run tests with: CI=true timeout 60s [test_command]
+- Never run in watch mode
+- [TODO: any other repo-specific test constraints]
+
+<!-- ================================================================
+  SYNAPSE PIPELINE SECTION — auto-injected by `synapse add`.
+  Do not edit the paths below — they are managed by Synapse.
+================================================================ -->
+
+## Synapse Pipeline
+
 This repo is managed by Synapse. Pipeline artifacts live in `.synapse/`.
-Do not modify `.synapse/run/`. All content artifacts are committed.
-See: [synapse constitution](../../synapse/AGENTS.md)
+
+**Artifact locations (all paths relative to repo root):**
+- Feature registry:   `.synapse/feature-registry.yaml`
+- Tasks (current):    `.synapse/tasks/current/`
+- Tasks (future):     `.synapse/tasks/future/`
+- Tasks (deferred):   `.synapse/tasks/deferred.md`
+- Plans (active):     `.synapse/plans/current/`
+- Specs:              `.synapse/docs/specs/`
+- Research:           `.synapse/docs/research/`
+- Reviews:            `.synapse/docs/reviews/`
+- Operational state:  `.synapse/run/`  ← NEVER MODIFY, GITIGNORED
+
+**Specialist rules:**
+- Planner (AGY): writes to `.synapse/plans/current/` and `.synapse/tasks/`
+- Coder (AGY): writes to product source code — NOT to `.synapse/`
+- Reviewer (Grok): writes to `.synapse/docs/reviews/` — READ-ONLY to product source
+- Triage (AGY): writes auto-fixes to product source, appends to `.synapse/tasks/deferred.md`
+- NEVER modify `.synapse/run/` — daemon owns that directory
+
+**Signal format (last line of your artifact output):**
+- Pipeline signal: `<!-- PIPELINE_SIGNAL: AUTO-FIX=N ESCALATE=M -->`
+- Tester signal:   `<!-- TESTER_SIGNAL: PASS=Y FAIL=N SKIPPED=M TYPECHECK=green|red -->`
+- If your step produces neither, the job is treated as TASK_FAILED.
+
+**For full pipeline rules, see the Synapse constitution:**
+[synapse/AGENTS.md](../../synapse/AGENTS.md)
 ```
+
+**Pipeline start guard:** `synapse start <product>` scans `AGENTS.md` for
+`[TODO` markers. If any are found, it refuses to start and prints which lines
+need to be filled in. You cannot accidentally run agents against an unconfigured repo.
 
 ---
 
