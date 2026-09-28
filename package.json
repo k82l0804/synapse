@@ -1,0 +1,23 @@
+{
+  "name": "synapse",
+  "version": "0.1.0",
+  "description": "AI development lifecycle orchestrator — manages the full pipeline from research to shipped code",
+  "private": true,
+  "scripts": {
+    "synapse": "bun run src/cli/index.ts",
+    "dev": "bun run --watch src/cli/index.ts",
+    "build": "bun build src/cli/index.ts --outfile dist/synapse --target bun",
+    "test": "bun run typecheck && CI=true bun test",
+    "test:unit": "CI=true bun test test/unit/",
+    "test:smoke": "CI=true timeout 60s bun test test/smoke/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
