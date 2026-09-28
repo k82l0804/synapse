@@ -5,7 +5,8 @@ development. Layer 0 freezes the protocol formats; Layer 1 fixes the 6 critical
 gaps and builds the daemon.
 
 > **Status:** 🔄 Active  
-> **Updated:** 2026-09-28
+> **Updated:** 2026-09-28  
+> **All paths are relative to the synapse repo root.**
 
 ---
 
@@ -18,7 +19,7 @@ No implementation work begins until these are complete.
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `synapse/docs/specs/feature-spec-format.md` exists
+  - `docs/specs/feature-spec-format.md` exists
   - Defines the exact template for a spec: Acceptance Criteria section, High-Level Tasks section, Test Contract section (MUST / MUST NOT format)
   - Includes a complete worked example (F-001)
   - Includes a JSON schema or markdown checklist validators can use
@@ -35,13 +36,13 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `synapse/docs/specs/task-format.md` exists
+  - `docs/specs/task-format.md` exists
   - Defines all fields: `type`, `depends_on`, `feature`, `spec`, `spec_task`, `rationale`, `acceptance_criteria`, `test_contract`, `priority`
   - Includes worked examples for each work type: `feature`, `refactor`, `chore`, `bugfix`
   - Specifies which fields are required vs optional per type
+  - Format is consistent with what `tasks/current/phase-1.md` itself uses (dogfood)
 **Test contract:**
   - MUST: a reader can write a conforming task block from this doc alone
-  - MUST: the format is consistent with what phase-1.md itself uses (dogfood)
   - MUST NOT: require reading any other document to understand field semantics
 **Priority:** HIGH
 
@@ -51,7 +52,7 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `synapse/docs/specs/plan-format.md` exists
+  - `docs/specs/plan-format.md` exists
   - Defines plan header fields (target_repo, feature, spec ref, task ref, phase)
   - Defines Deliverables section format (numbered, each with files-to-change, spec contract ref)
   - Defines Test Contract section (maps to spec's MUST/MUST NOT)
@@ -67,7 +68,7 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `synapse/docs/specs/pipeline-signal-protocol.md` exists
+  - `docs/specs/pipeline-signal-protocol.md` exists
   - Defines `PIPELINE_SIGNAL` grammar: `AUTO-FIX=N ESCALATE=M` field names and value types
   - Defines `TESTER_SIGNAL` grammar: `PASS=Y FAIL=N SKIPPED=M TYPECHECK=green|red`
   - Both signals must appear as the LAST line of their artifact (HTML comment format)
@@ -84,12 +85,12 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `synapse/docs/specs/review-format.md` exists
+  - `docs/specs/review-format.md` exists
   - Defines severity tags: `[BLOCKING]`, `[WARNING]`, `[INFO]`
   - Defines verdict line: `APPROVE`, `REQUEST_CHANGES`, or `NEEDS_DISCUSSION`
   - Defines required sections: Findings (by severity), Missing Tests, Architectural Risk, Verdict
   - Specifies that Grok is read-only: review docs contain findings only, no code edits
-  - Defines feedback file naming convention: `YYYY-MM-DDTHH-MM_feedback-{type}-{id}.md`
+  - Defines feedback file naming: `YYYY-MM-DDTHH-MM_feedback-{type}-{id}.md`
 **Test contract:**
   - MUST: a Grok review parsed by the daemon yields a clear approve/reject signal
   - MUST NOT: allow reviews without a verdict line
@@ -103,13 +104,14 @@ depends_on: []
 type: chore
 depends_on: []
 **Acceptance criteria:**
-  - `synapse/package.json` exists with name, version, scripts (`synapse`, `test`, `typecheck`)
-  - `synapse/bunfig.toml` exists
-  - `synapse/AGENTS.md` (the constitution file) exists — loaded as first context by every specialist
-  - `synapse/AGENTS.md` covers: anti-hang rules, working directory, key commands, schema enforcement rule ("failed, not close enough"), review rubric, deferred-items rule
-  - `.gitignore` updated: `.synapse-work/` (worktrees), `.local/pipeline/` (WAITING files), `*.db`
+  - `package.json` exists with name, version, scripts (`synapse`, `test`, `typecheck`)
+  - `bunfig.toml` exists
+  - `AGENTS.md` (the constitution file) exists — loaded as first context by every specialist
+  - `AGENTS.md` covers: anti-hang rules, working directory, key commands, schema enforcement rule ("failed, not close enough"), review rubric, deferred-items rule
+  - `.gitignore` has `.synapse/run/` entry (operational state gitignored)
+  - `.gitignore` has `synapse.db`, `synapse.db-shm`, `synapse.db-wal` entries
 **Test contract:**
-  - MUST: `bun run --cwd synapse synapse --help` works
+  - MUST: `bun run synapse --help` works from the synapse repo root
   - MUST NOT: leave any TODO placeholders in AGENTS.md
 **Priority:** HIGH
 
@@ -121,16 +123,17 @@ depends_on: []
 type: chore
 depends_on: [T-L0-1, T-L0-2]
 **Acceptance criteria:**
-  - `synapse/skills/research-to-features/SKILL.md` exists
+  - `skills/research-to-features/SKILL.md` exists
   - Implements the hardened extraction rules:
-    - Cap: max 3–5 features per research doc; extras go to `deferred`
+    - Cap: max 3–5 features per research doc; extras go to `tasks/deferred.md`
     - Every feature MUST have: user, trigger, visible outcome, non-goal
     - `--draft` flag: propose features without writing, stop for review
     - On confirm: writes registry rows (status: planned) + spec stubs using T-L0-1 template
+    - Spec stubs written to `docs/specs/F-XXX-name.md` (stable filename, no timestamp)
     - Prints ordered feature list (infra→data→API→UI) with scores, user can override
     - Spec stubs that fail the T-L0-1 schema do NOT enter the registry (fails the job)
     - NEVER auto-starts make-plans after running
-    - NEVER modifies docs/research/ — reads only
+    - NEVER modifies `docs/research/` — reads only
     - Prints paths + "waiting on spec-review" when done
 **Test contract:**
   - MUST: a valid run produces conforming spec stubs (checkable against T-L0-1 schema)
@@ -155,7 +158,7 @@ depends_on: [T-L0-6]
 
 ---
 
-### T-1-2: Add `--add-dir synapse/` for Grok workspace
+### T-1-2: Add `--add-dir` for Grok to read synapse task/plan dirs
 type: chore
 depends_on: [T-1-1]
 **Acceptance criteria:**
@@ -172,7 +175,7 @@ depends_on: [T-1-1]
 type: chore
 depends_on: [T-L0-5]
 **Acceptance criteria:**
-  - review-triage SKILL.md includes explicit typecheck step after each auto-fix
+  - `skills/review-triage/SKILL.md` includes explicit typecheck step after each auto-fix
   - Auto-fix commits only occur after green typecheck
   - Failed typecheck → finding re-classified as ESCALATE, not AUTO-FIX
 **Test contract:**
@@ -186,11 +189,11 @@ depends_on: [T-L0-5]
 type: chore
 depends_on: [T-L0-5]
 **Acceptance criteria:**
-  - review-triage SKILL.md instructs: deferred [WARNING] → append to `tasks/deferred.md` via MCP
-  - review-triage SKILL.md explicitly references the deferred-items-tracking rule
+  - `skills/review-triage/SKILL.md` instructs: deferred [WARNING] → append to `tasks/deferred.md` via MCP
+  - `skills/review-triage/SKILL.md` explicitly references the deferred-items-tracking rule
   - At least one deferred item from a real triage run appears in deferred.md (verified manually)
 **Test contract:**
-  - MUST: deferred findings are traceable in deferred.md, not just in triage prose
+  - MUST: deferred findings are traceable in tasks/deferred.md, not just in triage prose
   - MUST NOT: triage doc be the only record of a deferred item
 **Priority:** MEDIUM
 
@@ -200,9 +203,9 @@ depends_on: [T-L0-5]
 type: chore
 depends_on: [T-L0-3, T-L0-4]
 **Acceptance criteria:**
-  - make-plans SKILL.md defines the test contract format and requires it per deliverable
+  - `skills/make-plans/SKILL.md` defines the test contract format and requires it per deliverable
   - Format matches T-L0-1 schema (MUST/MUST NOT in structured form)
-  - At least one plan in plans/current/ has a conforming test contract section
+  - At least one plan in `plans/current/` has a conforming test contract section
 **Test contract:**
   - MUST: test contract format in make-plans output is parseable against T-L0-1 schema
   - MUST NOT: plans lack test contracts when spec has a MUST/MUST NOT section
@@ -214,8 +217,8 @@ depends_on: [T-L0-3, T-L0-4]
 type: chore
 depends_on: [T-L0-4]
 **Acceptance criteria:**
-  - TESTER_SIGNAL format is exactly as defined in `synapse/docs/specs/pipeline-signal-protocol.md`
-  - run-tests SKILL.md updated to emit TESTER_SIGNAL as the last line of its output
+  - TESTER_SIGNAL format matches exactly what's defined in `docs/specs/pipeline-signal-protocol.md`
+  - `skills/run-tests/SKILL.md` updated to emit TESTER_SIGNAL as the last line of its output
   - Pipeline workflow has a distinct `test-cycle` step separate from `fix-tests`
 **Test contract:**
   - MUST: run-tests produces a TESTER_SIGNAL parseable by a one-line regex
@@ -228,13 +231,13 @@ depends_on: [T-L0-4]
 
 | Task | Description | Type | Status |
 |------|-------------|------|--------|
-| T-L0-1 | feature-spec-format.md | chore | ⬜ todo |
-| T-L0-2 | task-format.md | chore | ⬜ todo |
-| T-L0-3 | plan-format.md | chore | ⬜ todo |
-| T-L0-4 | pipeline-signal-protocol.md | chore | ⬜ todo |
-| T-L0-5 | review-format.md | chore | ⬜ todo |
+| T-L0-1 | docs/specs/feature-spec-format.md | chore | ⬜ todo |
+| T-L0-2 | docs/specs/task-format.md | chore | ⬜ todo |
+| T-L0-3 | docs/specs/plan-format.md | chore | ⬜ todo |
+| T-L0-4 | docs/specs/pipeline-signal-protocol.md | chore | ⬜ todo |
+| T-L0-5 | docs/specs/review-format.md | chore | ⬜ todo |
 | T-L0-6 | package.json + AGENTS.md | chore | ⬜ todo |
-| T-L0-7 | research-to-features skill | chore | ⬜ todo (depends: L0-1, L0-2) |
+| T-L0-7 | skills/research-to-features/SKILL.md | chore | ⬜ todo (depends: L0-1, L0-2) |
 | T-1-1 | Grok read-only enforcement | chore | ⬜ todo (depends: L0-6) |
 | T-1-2 | Grok workspace dirs | chore | ⬜ todo (depends: 1-1) |
 | T-1-3 | Typecheck gate in triage | chore | ⬜ todo (depends: L0-5) |
@@ -248,7 +251,7 @@ depends_on: [T-L0-4]
 
 ```
 T-L0-1 ──┐
-T-L0-2 ──┴── T-L0-7 (research-to-features skill)
+T-L0-2 ──┴── T-L0-7 (skills/research-to-features)
 T-L0-3 ──┐
 T-L0-4 ──┼── T-1-5 (test contract in plans)
           └── T-1-6 (TESTER_SIGNAL)
