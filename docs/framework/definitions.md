@@ -1,6 +1,6 @@
 # Synapse Framework — Definitions Handbook
 
-> **Audience:** AI agents creating and reviewing artifacts, human operators making gate decisions, and contributors onboarding to the Synapse workflow.
+> **Audience:** Human operators making gate decisions, contributors onboarding to the Synapse workflow, and anyone who needs to understand *why* the process works the way it does. AI agents consume the [templates](templates.md) and conformance schema (Part 5) directly; a formal agent reference card is a planned future companion.
 
 ## What This Framework Does
 
@@ -12,10 +12,10 @@ Five artifact types carry work through the pipeline:
 
 | Artifact | What it is | Who creates it |
 |----------|-----------|---------------|
-| **Feature** (F-NNN) | A stakeholder-observable capability — the *what* and *why* | Stakeholder or product owner |
-| **Spec** (S-NNN) | A contract defining *what the system must do* — acceptance criteria, MUSTs, MUST NOTs | Engineer or spec author |
-| **Plan** (P-NNN) | A blueprint for *how to implement* the spec — deliverables, verification methods | Implementer |
-| **Task** (T-NNN) | An atomic unit of work within a plan — one agent, one deliverable | Plan author |
+| **Feature** | A stakeholder-observable capability — the *what* and *why* | Stakeholder or product owner |
+| **Spec** | A contract defining *what the system must do* — acceptance criteria, MUSTs, MUST NOTs | Engineer or spec author |
+| **Plan** | A blueprint for *how to implement* the spec — deliverables, verification methods | Implementer |
+| **Task** | An atomic unit of work within a plan — one agent, one deliverable | Plan author |
 | **Acceptance Test** | End-to-end proof that the feature works as the stakeholder intended | Tester (distinct from implementer) |
 
 Each artifact has an **ID** (like S-042) that never changes, a **status** (DRAFT → APPROVED → IN_PROGRESS → DONE), and **relational fields** that link it to its parent and children.
