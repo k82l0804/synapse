@@ -682,101 +682,19 @@ If plan's implementation sequence violates a dependency edge, the plan is non-co
 
 ## Part 7 — Domain Adaptation
 
-### Invariant Core vs. Domain Profile
+> **Status: Design intent only.** This framework is used for software development today. The domain adaptation mechanism described below has not been implemented or tested with a second domain. It is included to record the architectural decision that the framework should be domain-agnostic, not to prescribe a working mechanism.
 
-The framework has an **invariant core** that applies to all domains, and **domain profiles** that customize for specific contexts.
+### The Principle
 
-#### Invariant Core (Cannot Be Changed by Domain)
+The framework separates an **invariant core** (statuses, templates, conformance, gates, dependencies, traceability) from **domain-customizable aspects** (terminology, verification types, AC/HLD caps, gate timeouts, additional required fields).
 
-- State machine states and transitions
-- Required fields in templates
-- Conformance schema rules
-- Gate protocol (Author ≠ Approver, approval records)
-- Dependency system
-- Split and replan protocols
-- Coverage matrix requirement
+If and when the framework is applied to a non-software domain (e.g., simulation engineering, legal compliance), the customizable aspects would be captured in a domain profile that extends the core. The invariant core cannot be relaxed — only tightened or extended.
 
-#### Domain Profile (May Be Customized)
+**What can be customized:** Terminology labels (not semantics), verification types, AC/HLD limits (with justification), gate timeouts, additional required fields per artifact type, measurement procedures.
 
-| Aspect | What Can Change | Example |
-|--------|-----------------|---------|
-| Trigger models | Add domain-specific models | Nav Sim: "continuous" with timestep events |
-| Verification types | Add domain-specific types | Nav Sim: "reference-comparison" with tolerance |
-| Terminology | Rename labels (not semantics) | "Deliverable" → "Work Package" |
-| Caps | Adjust AC/HLD limits with justification | Safety-critical: 5 AC max, 3 HLD max |
-| Timeouts | Adjust gate timeouts | Research: 30-day FEATURE_GATE timeout |
-| Additional fields | Add required fields for domain | Nav Sim: `reference_dataset`, `tolerance` |
-| Metric types | Add measurement procedures | Legal: "gold-set F1 score" |
+**What cannot be customized:** Status values and transitions, required template fields, conformance schema rules, gate protocol (Author ≠ Approver), dependency system, split/replan protocols, coverage matrix requirement.
 
-### Domain Profile Schema
-
-```yaml
----
-domain_id: nav-sim
-name: Navigation Engineering Simulation
-version: 1
-extends: core                      # Always extends core
-
-# Additional required fields per artifact type
-additional_fields:
-  spec:
-    - name: reference_dataset
-      type: string
-      required: true
-      description: "Identity of reference dataset for validation"
-    - name: tolerance
-      type: object
-      required: true
-      schema:
-        metric: string
-        threshold: number
-        unit: string
-
-  plan:
-    - name: numerical_method
-      type: string
-      required: true
-      description: "Primary numerical method (e.g., RK4, Verlet, Barnes-Hut)"
-
-# Additional trigger models
-trigger_models:
-  - id: continuous
-    fields:
-      - timestep_event: "what triggers each step"
-      - state_observable: "what state is visible"
-      - termination: "when simulation ends"
-
-# Additional verification types
-verification_types:
-  - id: reference-comparison
-    fields:
-      - reference: "dataset or prior run"
-      - metric: "comparison metric"
-      - tolerance: "acceptable deviation"
-      - seed: "random seed for reproducibility"
-
-# Adjusted caps (with justification)
-caps:
-  ac_max: 10                       # Same as core
-  hld_max: 5                       # Reduced: sim components have high coupling
-  cap_justification: "Simulation deliverables have high interdependence; smaller chunks reduce integration risk"
-
-# Adjusted timeouts
-timeouts:
-  feature_gate: 14d                # Longer: requires simulation validation
-  spec_gate: 5d
-  plan_gate: 3d
----
-```
-
-### Profile Inheritance
-
-1. Every domain profile extends `core`
-2. Core fields cannot be removed, only added to
-3. Core constraints cannot be relaxed, only tightened
-4. A profile may extend another profile (single inheritance)
-
----
+See the worked examples in [examples.md](examples.md) (Example 2: Nav Sim) for an illustration of how the framework applies to a non-software domain.
 
 
 ## Part 8 — Worked Examples
