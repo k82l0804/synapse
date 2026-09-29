@@ -6,6 +6,20 @@
 
 This framework defines how work moves from an idea to verified code. It gives every artifact (feature, spec, plan, task) a standard structure, a lifecycle with review gates, and a traceability chain that connects stakeholder intent to tested implementation.
 
+### The Cast of Characters
+
+Five artifact types carry work through the pipeline:
+
+| Artifact | What it is | Who creates it |
+|----------|-----------|---------------|
+| **Feature** (F-NNN) | A stakeholder-observable capability — the *what* and *why* | Stakeholder or product owner |
+| **Spec** (S-NNN) | A contract defining *what the system must do* — acceptance criteria, MUSTs, MUST NOTs | Engineer or spec author |
+| **Plan** (P-NNN) | A blueprint for *how to implement* the spec — deliverables, verification methods | Implementer |
+| **Task** (T-NNN) | An atomic unit of work within a plan — one agent, one deliverable | Plan author |
+| **Acceptance Test** | End-to-end proof that the feature works as the stakeholder intended | Tester (distinct from implementer) |
+
+Each artifact has an **ID** (like S-042) that never changes, a **status** (DRAFT → APPROVED → IN_PROGRESS → DONE), and **relational fields** that link it to its parent and children.
+
 ### The Workflow in 30 Seconds
 
 ```
@@ -24,16 +38,25 @@ Code + Tests             ← implementation with @spec markers for traceability
 Feature Acceptance Test  ← independent proof the feature works end-to-end
 ```
 
-Each artifact is **reviewed** before the next layer begins. Specs and plans get dual-blind agent review + human approval. The human decides when to stop iterating — agents never approve.
+### How It Actually Works (A Walkthrough)
 
-### Companion Files
+Imagine you want to add product registration to Synapse. Here's what happens:
 
-| File | Contents |
-|------|----------|
-| **definitions.md** (this file) | Definitions, lifecycle, design rules, conformance, dependencies, traceability |
-| [templates.md](templates.md) | Full YAML templates for Feature, Spec, Plan, Task, and Approval Record |
-| [examples.md](examples.md) | 3 worked examples (SW Dev, Nav Sim, Defect Fix) + negative examples |
-| [domain-adaptation.md](domain-adaptation.md) | Domain-agnostic design: what's invariant vs customizable (design intent only) |
+**1. Feature.** You write a feature description: "A user can register a local repository with Synapse so that the daemon can manage its pipeline." You define success metrics — what a stakeholder can observe when this works. This becomes **F-042**.
+
+**2. Spec.** An engineer writes a spec (S-042) that says *what the system must do* — not how. The spec has acceptance criteria ("AC-1: Running `synapse add /path/to/repo` creates a `repos.yaml` entry"), contract rules (MUST create the file, MUST NOT modify existing repo files), and a sizing constraint: the spec must be small enough to implement atomically — no intermediate checkpoints.
+
+**3. Review.** The spec goes through agent review while still in DRAFT. Reviewer 1 (blind) produces a findings document. The author fixes obvious issues. Reviewer 2 (blind) produces another findings document. The findings are merged, triaged (must-fix / implementer-decides / deferred), and the must-fixes are patched. The **human** then decides: approve, or iterate again. Agents find problems; humans make decisions. We typically do 2-3 review iterations for specs — enough to catch real defects, not so many that reviewers start inventing problems.
+
+**4. Plan.** Once the spec is approved, an implementer writes a plan (P-042) that says *how* to build it. The plan names specific files, functions, algorithms, and libraries — things the spec deliberately did not specify. The plan has deliverables (HLD-1: schema module, HLD-2: CLI handler) and a verification method for each acceptance criterion.
+
+**5. Tasks.** The plan is decomposed into tasks (T-001, T-002, ...) — each small enough for one agent to complete in one session. Tasks can depend on each other within the plan.
+
+**6. Implementation.** Each task produces code and tests. The code carries `@spec S-042` markers so that any future reader (or automated audit) can trace from the code back to the spec, plan, feature, and stakeholder intent.
+
+**7. Verification.** When all tasks are done, the plan runs its verification: do all acceptance criteria pass? Then the feature runs its **acceptance tests** — independent end-to-end tests that prove the stakeholder's capability actually works, not just that the code was written correctly.
+
+**The key insight:** Each layer adds detail but never contradicts the layer above. The feature says "register a repo." The spec says "create a `repos.yaml` entry." The plan says "use YAML.stringify with schema validation." Each is a faithful refinement of the one above.
 
 ---
 
@@ -47,6 +70,15 @@ Each artifact is **reviewed** before the next layer begins. Specs and plans get 
 6. [Dependency System](#part-6--dependency-system) — Scope, types, cycles, ordering
 7. [Traceability](#part-7--traceability) — Chain, coverage matrices, @spec markers, completion predicates
 8. [Worked Examples](#part-8--worked-examples) → summary; full examples in [examples.md](examples.md)
+
+### Companion Files
+
+| File | Contents |
+|------|----------|
+| **definitions.md** (this file) | Definitions, lifecycle, design rules, conformance, dependencies, traceability |
+| [templates.md](templates.md) | Full YAML templates for Feature, Spec, Plan, Task, and Approval Record |
+| [examples.md](examples.md) | 3 worked examples (SW Dev, Nav Sim, Defect Fix) + negative examples |
+| [domain-adaptation.md](domain-adaptation.md) | Domain-agnostic design: what's invariant vs customizable (design intent only) |
 
 ---
 
