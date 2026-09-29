@@ -54,12 +54,32 @@ idle      — product registered, no pipeline run started
 running   — a step is actively executing
 waiting   — daemon paused at a gate (GATE file written)
 stopping  — stop requested; daemon will halt after current step
-stopped   — was running or waiting; halted (manual stop or restart)
+stopped   — was running; halted (manual stop or restart). `waiting` runs stay `waiting` on restart.
 done      — all steps completed successfully
-failed    — a step produced SIGNAL_ABSENT or SCHEMA_VIOLATION
+failed    — terminal failure state; pipeline halts
 ```
 
-`TASK_FAILED` in signals maps to run status `failed`. There is no other run status.
+**Signal-to-status transition table (B-2 fix):**
+
+| Signal outcome | Run state transition | Notes |
+|---|---|---|
+| `STATUS=DONE` | `running → running` (next step) or `running → done` (after step 15) | Normal advance |
+| `STATUS=PARTIAL` | `running → running` (next step) | Daemon logs warnings to run log; advances |
+| `STATUS=FAILED` | `running → failed` | Terminal; pipeline halts |
+| `ESCALATE>0` | `running → waiting` | Ad-hoc gate: daemon writes GATE file mid-sequence |
+| `SIGNAL_ABSENT` | `running → failed` | `failure_reason = "SIGNAL_ABSENT: ..."` |
+| `SCHEMA_VIOLATION` | `running → failed` | `failure_reason = "SCHEMA_VIOLATION: ..."` |
+| `TESTER FAIL>0` or `TYPECHECK=red` | `running → running` (loop back to step 12) | `iteration` incremented; at iteration ≥ 3 → `waiting` (ESCALATE gate) |
+
+**Reject transition (B-4 fix):**
+- `synapse approve <run-id>` → `waiting → running`, `current_step` unchanged, proceed to next step
+- `synapse reject <run-id>` → `waiting → running`, `current_step` rewound to the gate's generator step:
+  - SPEC GATE (step 4) → rewind to step 1 (`research-to-features`), `iteration` incremented
+  - PLAN GATE (step 11) → rewind to step 8 (`make-plans`), `iteration` incremented
+  The specialist at the rewound step reads `reviews/feedback/` before generating output.
+
+**Protocol §7 counter ownership:** The daemon's HLT-5 state machine owns `current_step`,
+`auto_fix_count`, `escalate_count`, and `iteration` on `pipeline_runs`. S-013 owns `last_signal`.
 
 ## User, Trigger, Outcome
 
@@ -79,18 +99,25 @@ failed    — a step produced SIGNAL_ABSENT or SCHEMA_VIOLATION
 - [ ] AC-1: `synapse start <product>` creates a pipeline run record and begins step 1
 - [ ] AC-2: Each pipeline step spawns a specialist subprocess and waits for completion
 - [ ] AC-3: After each step, the daemon reads the output artifact's signal and updates DB state
-- [ ] AC-4: If a signal is absent or malformed, the run is marked `TASK_FAILED` and pipeline halts
+- [ ] AC-4: If a signal is absent or malformed, the run is marked `failed` and pipeline halts
 - [ ] AC-5: `synapse status <product>` reflects the most recently committed step name and `pipeline_runs.status` from `synapse.db`
-- [ ] AC-6: On daemon restart, runs that were `running` become `stopped`; user must `synapse resume`
+- [ ] AC-6: On daemon restart, runs that were `running` become `stopped`; `waiting` runs stay `waiting`; user must `synapse resume` (or `auto_resume: true`)
 - [ ] AC-7: `synapse stop <product>` sets status to `stopping`; daemon finishes the current step then halts
+- [ ] AC-8: `STATUS=PARTIAL` signal advances the pipeline (same as DONE) and logs warnings to the run log
+- [ ] AC-9: `ESCALATE>0` signal on any non-gate step triggers an ad-hoc gate (`running → waiting`)
+- [ ] AC-10: `TESTER FAIL>0` or `TYPECHECK=red` loops back to step 12 with `iteration` incremented; at iteration ≥ 3 escalates to gate
+- [ ] AC-11: `synapse reject <run-id>` at SPEC GATE rewinds `current_step` to step 1; at PLAN GATE rewinds to step 8
 
 ## High-Level Tasks
 
-1. HLT-1: Implement daemon process entry point — reads DB on startup, sets any `running`/`waiting` runs to `stopped`
+1. HLT-1: Implement daemon process entry point — reads DB on startup, sets `running` runs to `stopped`;
+   `waiting` runs remain `waiting` (GATE file still on disk; `synapse inbox` still shows them)
 2. HLT-2: Implement pipeline run creation — creates `pipeline_runs` record, resolves step sequence from the fixed step list above
 3. HLT-3: Implement step executor — spawns `agent-job.sh` subprocess, captures output artifact path; after step completes calls S-015 incremental indexer on the artifact
-4. HLT-4: Invoke S-013 `parseSignal(artifactPath)` on the output artifact, apply the result to update DB run state
-5. HLT-5: Implement run state machine — transitions using the status enum above: `running → waiting` (gate), `waiting → running` (approve/reject), `running → done/failed`
+4. HLT-4: Invoke S-013 `parseSignal(artifactPath)` on the output artifact; apply the signal-to-status
+   transition table above to update DB run state
+5. HLT-5: Implement run state machine — transitions per the table above; owns `current_step`,
+   `auto_fix_count`, `escalate_count`, and `iteration` on `pipeline_runs`; handles reject rewind
 6. HLT-6: Implement graceful stop — sets run status to `stopping`; daemon checks after each step completes before starting the next
 7. HLT-7: Implement `synapse status` command — reads current run state from `pipeline_runs` in DB, prints step name and status
 
@@ -98,13 +125,20 @@ failed    — a step produced SIGNAL_ABSENT or SCHEMA_VIOLATION
 
 ### MUST
 - MUST: starting a pipeline creates a `pipeline_runs` row with `status: running`
-- MUST: each step spawns exactly one specialist subprocess
-- MUST: absent or malformed signal causes run status to become `TASK_FAILED`
+- MUST: each non-gate step spawns exactly one specialist subprocess
+- MUST: absent or malformed signal causes run status to become `failed` (not `TASK_FAILED`)
+- MUST: `STATUS=PARTIAL` signal advances the pipeline and writes a warning to the run log
+- MUST: `ESCALATE>0` on a non-gate step transitions `running → waiting` and writes a GATE file
+- MUST: `TESTER FAIL>0` or `TYPECHECK=red` loops back to step 12 with `iteration` incremented
+- MUST: at iteration ≥ 3 on a tester fail loop, escalate to a gate instead of looping
+- MUST: `synapse reject` at SPEC GATE rewinds `current_step` to 1; at PLAN GATE rewinds to 8
 - MUST: `synapse stop` halts after the current step completes (not mid-step)
-- MUST: daemon restart sets `running` runs to `stopped` (no auto-resume by default)
+- MUST: daemon restart sets `running` runs to `stopped`; `waiting` runs remain `waiting`
+- MUST: `auto_resume: false` is the default; daemon does not auto-resume stopped runs
 
 ### MUST NOT
 - MUST NOT: run multiple steps in parallel (serial mode only)
-- MUST NOT: start a new step if the current step's signal is absent
+- MUST NOT: start a new step if the current step's signal is absent or `STATUS=FAILED`
 - MUST NOT: delete or modify any artifact file produced by a specialist
 - MUST NOT: require a GUI to start, stop, or monitor
+- MUST NOT: stop `waiting` runs on restart (GATE file stays on disk; inbox still shows them)

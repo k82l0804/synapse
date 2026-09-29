@@ -74,7 +74,7 @@ spec_task: HLT-1 through HLT-6
 
 ### T-2-3: Daemon engine
 type: feature
-depends_on: [T-2-1, T-2-2]
+depends_on: [T-2-1, T-2-2, T-2-5]
 feature: S-012
 spec: specs/S-012-daemon-engine.md
 spec_task: HLT-1 through HLT-7
@@ -82,9 +82,9 @@ spec_task: HLT-1 through HLT-7
   - AC-1: `synapse start <product>` creates run and begins step 1
   - AC-2: Each step spawns one specialist subprocess
   - AC-3: Daemon reads signal from output artifact after each step
-  - AC-4: Absent/malformed signal → TASK_FAILED, pipeline halts
+  - AC-4: Absent/malformed signal → run status `failed`, pipeline halts
   - AC-5: `synapse status` reflects current step and status
-  - AC-6: Daemon restart sets running→stopped (no auto-resume)
+  - AC-6: Daemon restart sets `running`→`stopped`; `waiting` stays `waiting`
   - AC-7: `synapse stop` halts after current step completes
 **Test contract:**
   - MUST: start creates pipeline_runs row with status: running
@@ -122,7 +122,7 @@ spec_task: HLT-1 through HLT-6
 
 ### T-2-5: Artifact index
 type: feature
-depends_on: [T-2-3]
+depends_on: [T-2-1]
 feature: S-015
 spec: specs/S-015-artifact-index.md
 spec_task: HLT-1 through HLT-6

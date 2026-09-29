@@ -33,9 +33,9 @@ Each task in a phase file uses this exact structure:
 ### {TASK-ID}: {Short title}
 type: feature | chore | bugfix | refactor
 depends_on: [] | [TASK-ID, ...]
-feature: F-XXX                     # omit for chore/bugfix/refactor
-spec: specs/F-XXX-name.md          # omit for chore/bugfix/refactor
-spec_task: HLT-N                   # which HLT in the spec this task implements
+feature: S-XXX                     # omit for chore/bugfix/refactor
+spec: specs/S-XXX-name.md          # omit for chore/bugfix/refactor
+spec_task: HLT-1 through HLT-N    # range of HLTs this task covers
 rationale: |                       # REQUIRED for refactor; optional for others
   One sentence: why this task exists.
 **Acceptance criteria:**
@@ -67,9 +67,9 @@ rationale: |                       # REQUIRED for refactor; optional for others
 
 | Field | Required when | Description |
 |-------|--------------|-------------|
-| `feature` | `type: feature` | Feature ID from registry: `F-XXX` |
-| `spec` | `type: feature` | Path to spec: `specs/F-XXX-name.md` |
-| `spec_task` | `type: feature` | Which HLT this implements: `HLT-N` |
+| `feature` | `type: feature` | Feature ID from registry: `S-XXX` (prefix matches repo `id_prefix`) |
+| `spec` | `type: feature` | Path to spec: `specs/S-XXX-name.md` |
+| `spec_task` | `type: feature` | HLT range this task covers: `HLT-1 through HLT-N` (single feature, all HLTs) |
 | `rationale` | `type: refactor` | Why this refactor is needed (mandatory for traceability) |
 
 ### Optional Fields
@@ -84,24 +84,25 @@ rationale: |                       # REQUIRED for refactor; optional for others
 
 ### `type: feature`
 
-Maps to exactly one HLT in an approved spec. The spec MUST be approved before
-the task can enter `tasks/current/`. Planner creates one plan per feature task.
+Maps to one **feature** in an approved spec, covering all that feature's HLTs.
+The spec MUST be `approved` before the task can enter `tasks/current/`.
+Planner creates one plan per feature task (covering all HLTs).
 
 ```markdown
-### T-1-3: Implement dark mode toggle
+### T-2-3: Implement daemon engine (S-012)
 type: feature
-depends_on: [T-1-1, T-1-2]
-feature: F-041
-spec: specs/F-041-dark-mode.md
-spec_task: HLT-3
+depends_on: [T-2-1, T-2-2]
+feature: S-012
+spec: specs/S-012-daemon-engine.md
+spec_task: HLT-1 through HLT-7
 **Acceptance criteria:**
-  - AC-1: Toggle button appears in settings panel
-  - AC-2: Preference persists across sessions (stored in kv.json)
-  - AC-3: All UI components respect the dark mode class
+  - AC-1: `synapse start` begins the pipeline step sequence
+  - AC-2: Daemon survives restart; resumes from last committed state
+  - AC-3: `synapse status` shows current step and run status
 **Test contract:**
-  - MUST: toggling dark mode changes the root CSS class within 50ms
-  - MUST: dark mode preference survives page reload
-  - MUST NOT: toggling dark mode cause a full page reload
+  - MUST: daemon writes run state to DB before spawning each step
+  - MUST: `synapse stop` halts after the current step completes
+  - MUST NOT: lose a committed run record on restart
 **Priority:** HIGH
 ```
 

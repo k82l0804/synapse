@@ -22,16 +22,17 @@ reject is forbidden — the `--note` flag is required.
 ## User, Trigger, Outcome
 
 - **User:** Developer who is the human approver in the pipeline
-- **Trigger:** Daemon enters `GATE_WAITING` state — daemon writes `.synapse/run/GATE-{run-id}.md`
+- **Trigger:** Daemon enters run status `waiting` — daemon writes `.synapse/run/GATE-{run-id}.md`
 - **Visible Outcome:**
   - `synapse inbox` lists all pending gates across all products by scanning `.synapse/run/GATE-*.md`,
     showing run-id, product name, gate type, and artifact path for each
   - `synapse approve <run-id>` → pipeline advances to next step; daemon deletes the GATE file
     and sets run status `waiting → running`
   - `synapse reject <run-id> --note "..."` → feedback file written to `reviews/feedback/`;
-    daemon sets run status `waiting → running` so it re-dispatches the same step;
-    the specialist reads `reviews/feedback/` before generating output;
-    a new GATE file appears when the regenerated artifact is ready
+    daemon sets run status `waiting → running` and rewinds `current_step` per the
+    S-012 reject rule (SPEC GATE → step 1; PLAN GATE → step 8; `iteration` incremented);
+    the specialist at the rewound step reads `reviews/feedback/` before generating output;
+    a new GATE file appears when the regenerated artifact reaches the gate again
   - `synapse reject <run-id>` without `--note` → exits non-zero: "rejection requires --note"
   - `synapse reject <run-id> --note ""` or `--note "   "` → exits non-zero: "note must not be empty"
 - **Non-Goal:** No desktop notifications — developer polls `synapse inbox` or sets up a
@@ -50,8 +51,12 @@ reject is forbidden — the `--note` flag is required.
 
 ## High-Level Tasks
 
-1. HLT-1: Implement GATE file writer — daemon writes `.synapse/run/GATE-{run-id}.md` with run-id, product, gate type, and artifact path on gate entry
-2. HLT-2: Implement `synapse inbox` — scans `.synapse/run/GATE-*.md` across all products, formats output with run-id, product, gate type, artifact path
+1. HLT-1: Implement GATE file writer — daemon writes `.synapse/run/GATE-{run-id}.md` with this
+   frontmatter: `run_id`, `product`, `gate_type` (`spec|plan`), `artifact_path`, `created_at` (ISO 8601).
+   **Inbox authority:** `synapse inbox` lists GATE files whose `pipeline_runs.status = 'waiting'`
+   (DB is authoritative); a GATE file with status `running` or `stopped` in DB is not shown.
+2. HLT-2: Implement `synapse inbox` — scans `.synapse/run/GATE-*.md`, filters to DB-confirmed `waiting` runs,
+   formats output with run-id, product, gate type, artifact path
 3. HLT-3: Implement `synapse approve` — validates run-id, deletes GATE file, sets run status `waiting → running`
 4. HLT-4: Implement `synapse reject` — validates `--note` (required, non-empty after trim), writes feedback file to `reviews/feedback/`, sets run status `waiting → running`
 5. HLT-5: Implement `synapse inbox --count` — prints integer count only

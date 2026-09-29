@@ -145,6 +145,16 @@ These sections MAY appear after the required sections:
 (Additional context, links to research docs, background reading.)
 ```
 
+### Optional frontmatter fields
+
+Additional fields MAY appear in the frontmatter after the required fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `depends_on` | list | IDs of other specs this spec depends on. Format: `[S-001, S-002]`. |
+
+Validators MUST NOT reject a spec for having unrecognized frontmatter fields.
+
 ---
 
 ## 5. Full Example — F-001
@@ -220,7 +230,7 @@ A spec stub is **non-conforming** (fails schema, must not enter registry) if ANY
 |-------|------|
 | ❌ Missing frontmatter | YAML block must be present and parseable |
 | ❌ Missing required field | Any of: id, name, status, created, updated, author, feature_registry_ref |
-| ❌ Wrong id format | Must match `F-\d{3}` |
+| ❌ Wrong id format | Must match `[A-Z]-\d{3}` with prefix equal to the repo's configured `id_prefix` (default `F`) |
 | ❌ Status not in enum | Must be `draft`, `approved`, or `done` |
 | ❌ Missing section | Any of the 5 required sections absent |
 | ❌ Missing UTONGs | user, trigger, visible outcome, or non-goal absent |
@@ -239,11 +249,13 @@ The pipeline does not proceed until a conforming spec is produced.
 ## 7. File Naming Convention
 
 ```
-specs/F-XXX-kebab-case-name.md
+specs/{PREFIX}-XXX-kebab-case-name.md
 ```
 
 - **Stable filename** — never changes after creation (tasks and plans reference it by path)
 - **No timestamp prefix** (unlike reviews and plans — specs are permanent contracts)
+- `{PREFIX}` is the repo-configured `id_prefix` (e.g. `S` for synapse, `F` for fox-code-cli)
 - `XXX` is the zero-padded feature ID matching `feature-registry.yaml`
 
-Example: `specs/F-001-research-to-features.md`
+Example: `specs/S-011-product-registration.md` (synapse repo, id_prefix = S)
+Example: `specs/F-001-research-to-features.md` (fox-code-cli repo, id_prefix = F)
