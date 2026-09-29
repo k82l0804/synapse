@@ -42,6 +42,52 @@ This is the only sizing rule. "Session," "focus time," and other temporal measur
 
 The test is atomicity: can this unit be implemented as a single uninterruptible block of work that produces a verifiable deliverable? If the answer is "only with intermediate saves," the spec is too large.
 
+#### How sizing cascades through layers
+
+Atomicity is **estimated** when writing specs and **validated** when writing plans and tasks. Each layer transition is a checkpoint where mis-sizing is discovered and corrected:
+
+| Transition | Who validates | What they check | Signal it's wrong |
+|------------|-------------|-----------------|-------------------|
+| Feature → Specs | Spec writer | Can I define this as one atomic unit? | Need > 10 ACs, > 7 HLDs, or can't describe without "then checkpoint and..." |
+| Spec → Plan | Plan writer | Can I implement this without intermediate saves? | Implementation sequence requires waiting on external results between steps, or plan needs > 7 HLDs |
+| Plan → Tasks | Task creator | Can one agent complete each HLD without context overflow? | Single HLD becomes > 3 tasks, or task requires mid-task coordination |
+
+**Spec writing (estimation):** The spec writer sizes by asking "can a single specialist implement this atomically?" This is an estimate — the writer hasn't built it yet. The caps (≤ 10 ACs, ≤ 7 HLDs) are heuristics that correlate with atomicity but do not guarantee it.
+
+**Plan writing (first validation):** The planner decomposes the spec into concrete implementation steps. This is where mis-sizing is discovered. If the planner finds:
+- An HLD requires checkpoint-saving because a later HLD depends on its output through an external system
+- The implementation sequence has mandatory wait points (external compute, human review, data availability)
+- They need more than 7 HLDs to cover the spec
+
+Then the spec is not atomic. The planner must:
+1. Record the finding in the plan's **Open Questions** section
+2. Open Questions must be empty before PLAN GATE — so this forces the issue
+3. The resolution is either: (a) amend the spec via the Split Protocol, or (b) the plan reviewer confirms the implementation is genuinely atomic despite appearances
+
+**Task creation (second validation):** If tasks are used, each HLD should become 1-2 tasks. If a single HLD becomes > 3 tasks, the HLD was too coarse and the plan should be revised. Tasks are terminal — they cannot be split after creation. If scope grows mid-task, create additional tasks (don't expand existing ones).
+
+#### What happens when sizing is wrong
+
+The framework does not assume specs are correctly sized on first attempt. Sizing errors are caught and corrected:
+
+```
+Spec written (estimate)
+  ↓
+Plan written → planner discovers spec isn't atomic
+  ↓
+Open Question recorded: "S-042 requires intermediate checkpoint after HLD-3"
+  ↓
+PLAN GATE blocks (open questions non-empty)
+  ↓
+Resolution: split S-042 into S-042 + S-043 via Split Protocol
+  ↓
+New specs go through SPEC GATE
+  ↓
+New plans written for each
+```
+
+This is not a failure — it is the framework working as intended. The cost of splitting at plan time is lower than the cost of discovering mid-implementation that the work can't be completed atomically.
+
 ### The Layer Principle
 
 Each artifact layer answers exactly one question:
