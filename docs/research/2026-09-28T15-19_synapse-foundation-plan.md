@@ -376,8 +376,8 @@ Scenario: T3/L3 agent in Reviewer role
 
 ## 2.9 Core Principle: Multi-Provider Review
 
-> **Independent reviewers must come from different providers.**
-> Same model called twice = same training = same blind spots. That is not review diversity; it is noise.
+> **Policy: Two reviewers — Grok (Reviewer 1, blind) and Claude (Reviewer 2, sees Reviewer 1).**
+> Same model called twice = same training = same blind spots = noise, not review.
 > True structural independence requires different companies, different training corpora, different architectures.
 
 ### Why two reviewers find different things
@@ -387,61 +387,74 @@ A review is only as good as the reviewer's reference frame. Different models hav
 - Different architectural choices → different reasoning patterns
 - Different fine-tuning objectives → different things they look for
 
-Two independent reviewers from different providers produce reviews that are *complementary*, not redundant.
-The union of two independent reviews covers significantly more ground than either alone.
+Two independent reviewers from different providers produce complementary, not redundant, reviews.
+Empirically: Grok found contract-level issues (schema cross-references, GATE file naming conflict).
+Claude Fable found state machine gaps, trailing-newline ambiguity, and reject re-dispatch bugs
+that only became visible once surface issues were cleared. Neither alone was sufficient.
 
-This was observed empirically: AGY performed *content analysis* (logical consistency of acceptance criteria),
-Grok performed *contract analysis* (cross-referenced the format spec and protocol docs). Both found real issues
-the other missed. Neither review alone was sufficient.
+### Reviewer configuration
 
-### Default dual-reviewer configuration
-
-| Slot | Agent | Provider | Model family | Role |
+| Slot | Agent | Provider | Independence | Role |
 |------|-------|----------|-------------|------|
-| Reviewer 1 | Grok CLI | xAI | Grok | Contract/schema analysis |
-| Reviewer 2 | Claude Code | Anthropic | Claude | Coherence/coverage analysis |
+| **Reviewer 1** | Grok CLI | xAI | **Fully blind** — sees artifact + reference docs only | Contract/schema analysis |
+| **Reviewer 2** | Claude Code | Anthropic | **Sees Reviewer 1's output** — confirms + extends | Coherence/coverage/depth |
+| Generator | AGY | Google/Gemini | Never reviews its own output | — |
 
-The generator (AGY) uses Gemini (Google). All three providers are independent.
+**Why Reviewer 1 must be blind:** Anchoring bias suppresses independent discovery.
+Grok's value is finding issues the generator missed; that requires no prior signal.
 
-**Reviewer-Generator Separation extended:**
+**Why Reviewer 2 sees Reviewer 1:** Confirmation increases confidence; Reviewer 2 focuses on
+gaps rather than re-covering ground and can go deeper on flagged issues.
+
+**Reviewer-Generator Separation (invariant):**
 - Reviewers must be independent of the generator (different provider)
-- Reviewers must be independent of *each other* (different provider)
+- Reviewers must be independent of each other (different provider)
 - Same model called twice with different prompts is NOT dual review
 
 ### When to use dual review
 
-| Artifact | Dual review? | Rationale |
-|----------|-------------|-----------|
-| Specs | **Yes** | Highest stakes — schema violations and contract gaps propagate through everything |
-| Plans | Recommended | Expensive to fix after implementation starts |
-| Code | Single review + tests | Test suite provides the independent signal; one review is sufficient |
-| Tasks | Single review | Derived directly from approved specs; single review is usually sufficient |
+| Artifact | Policy | Reviewer 2 model | Rationale |
+|----------|--------|-----------------|-----------|
+| **Specs** | **Dual — always** | **Claude Fable** | Highest stakes — bugs amplify 4-5x downstream; Fable catches state machine gaps |
+| **Plans** | **Dual — always** | Claude Opus 5 | Contract artifact; one plan bug = one failed sprint |
+| Code | Single (Grok) + tests | — | Tests are the independent signal; second review is redundant |
+| Tasks | Single (Grok) | — | Derived mechanically from approved specs; low bug surface |
+
+### Invocation sequence
+
+```bash
+# Reviewer 1: Grok (blind)
+cd synapse/specs/
+grok
+> Review S-011..S-015 against feature-spec-format.md and pipeline-signal-protocol.md.
+> Be adversarial. Create grok-spec-review.md here. Read-only — do not edit existing files.
+git mv specs/grok-spec-review.md reviews/spec/$(date +%Y-%m-%dT%H-%M)_grok-spec-review.md
+
+# Reviewer 2: Claude (sees Reviewer 1) — Specs: Fable. Plans: Opus 5.
+claude -p "You are a read-only adversarial spec reviewer (Reviewer 2).
+Read S-011..S-015, feature-spec-format.md, pipeline-signal-protocol.md,
+AND reviews/spec/<grok-review>.md (Reviewer 1 findings — confirm + extend).
+Create claude-spec-review.md here. Verdict: APPROVE or REQUEST_CHANGES.
+Do NOT edit any existing spec file." --allowedTools "Write" "Edit"
+git mv specs/claude-spec-review.md reviews/spec/$(date +%Y-%m-%dT%H-%M)_claude-spec-review.md
+
+# Triage: AGY synthesizes both reviews -> [GATE] human approves
+```
+
+### Verification pass (iter2)
+
+After triage fixes are applied, run a verification pass before re-approving:
+- **Reviewer**: Claude Fable (specs) or Opus 5 (plans) — sees all prior reviews and triage doc
+- **Goal**: Verify fixes propagated correctly; find issues surface noise in iter1 obscured
+- **Required** if iter1 had any BLOCKING findings
+- **Optional** if all iter1 findings were INFO/WARNING with no architectural implications
 
 ### The merge step
 
-No separate merge step is needed. The Triage agent (AGY) reads *all* review documents and synthesizes them:
+The Triage agent (AGY) reads all review documents and synthesizes:
 - Finding caught by both reviewers → high confidence, fix immediately
 - Finding caught by one reviewer → standard confidence, fix or defer
 - Conflicting findings → escalate to human gate
-
-The triage output is a single unified recommendation set, regardless of how many reviews were produced.
-
-### Invoking reviewers
-
-```bash
-# Reviewer 1: Grok (in the artifact directory)
-grok
-> Review specs S-011..S-015 plus feature-spec-format.md and pipeline-signal-protocol.md.
-> Create grok-spec-review.md. Be adversarial. Read-only — do not edit any existing files.
-
-# Reviewer 2: Claude Code (in the artifact directory)
-claude -p --disallowedTools "Bash" \
-  "Review specs S-011..S-015 plus feature-spec-format.md and pipeline-signal-protocol.md.
-   Create claude-spec-review.md. Be adversarial. Read-only — create the review file only."
-
-# Triage: AGY reads both reviews, produces unified recommendations
-# Then: [SPEC GATE] human approves triage recommendations
-```
 
 ---
 
