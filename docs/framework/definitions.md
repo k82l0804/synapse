@@ -973,3 +973,162 @@ The `tasks/deferred/` directory continues to serve its purpose — the framework
 ---
 
 *End of document.*
+
+---
+
+## Appendix C — Agent Quick Reference
+
+> This appendix is for AI agents. It restates the handbook's rules in a mechanical format optimized for agent consumption. Humans should read the main handbook instead.
+
+### Status Transitions (Decision Rules)
+
+```
+IF artifact.status == DRAFT
+  AND all_required_fields_present
+  AND conformance_check_passes
+  AND human_approves
+THEN → APPROVED
+
+IF artifact.status == APPROVED
+  AND work_begins
+THEN → IN_PROGRESS
+
+IF artifact.status == IN_PROGRESS
+  AND all_ACs_verified
+THEN → DONE
+
+IF artifact.status == IN_PROGRESS
+  AND verification_fails
+THEN → FAILED
+
+IF artifact.status == FAILED
+  AND rework_path_identified
+THEN → DRAFT
+
+IF external_blocker_identified
+THEN → BLOCKED
+
+IF intentional_cancellation
+THEN → ABANDONED
+
+IF artifact.status == DONE
+  AND newer_version_approved
+THEN → SUPERSEDED
+```
+
+### Artifact Creation Procedure
+
+```
+CREATE Feature:
+  1. Assign F-NNN (monotonic, never reused)
+  2. Set status = DRAFT
+  3. Populate: id, version, name, work_type, author, stakeholders, domain
+  4. Write: description, success_metrics, in_scope, out_of_scope
+  5. Submit for FEATURE_GATE review
+
+CREATE Spec:
+  1. Assign S-NNN (monotonic, never reused)
+  2. Set status = DRAFT
+  3. Set feature = F-NNN (or NONE for non-feature work)
+  4. Populate: id, version, name, feature, author, domain
+  5. Write: trigger, visible_outcome, acceptance_criteria (≤10), MUST/MUST_NOT
+  6. Write: HLDs (≤7), depends_on, coverage_matrix
+  7. Validate: every AC traces to feature IS-N or M-N
+  8. Submit for SPEC_GATE review
+
+CREATE Plan:
+  1. Assign P-NNN (monotonic, never reused)
+  2. Set status = DRAFT
+  3. Set spec = S-NNN, spec_version = N
+  4. Populate: id, version, name, spec, author
+  5. Write: deliverables (per HLD), verification (per AC), open_questions (must be empty)
+  6. Validate: every AC has a verification method
+  7. Submit for PLAN_GATE review
+
+CREATE Task:
+  1. Assign T-NNN (monotonic per plan, never reused)
+  2. Set status = NOT_STARTED
+  3. Set plan = P-NNN, hld = HLD-N
+  4. Set owner = agent:xxx or human:xxx
+  5. Write: description, acceptance subset, depends_on (same plan only)
+```
+
+### Review Protocol (Agent Reviewer)
+
+```
+REVIEW artifact:
+  1. Read artifact against conformance schema
+  2. Classify each issue:
+     BLOCKING  — violates a MUST, missing required field, contradicts parent
+     WARNING   — ambiguous wording, missing edge case, suboptimal structure
+     INFO      — style suggestion, future consideration
+  3. Output findings document with:
+     - Severity per finding (BLOCKING | WARNING | INFO)
+     - Specific line/field reference
+     - Suggested fix (if BLOCKING)
+  4. DO NOT set status. DO NOT approve. DO NOT modify the artifact.
+  5. Return findings to author.
+```
+
+### Validation Rules (Reject Conditions)
+
+```
+REJECT spec IF:
+  ac_count > 10
+  hld_count > 7
+  missing: id | version | name | feature | status | author | domain
+  missing: trigger | visible_outcome | acceptance_criteria
+  ac_without_verification_trace
+  depends_on contains cycle
+  feature field is empty (unless work_type in [chore, bugfix, refactor])
+
+REJECT plan IF:
+  missing: id | version | name | spec | spec_version | author
+  open_questions is not empty
+  ac_without_verification_method
+  spec_version != approved spec version
+  implementation_sequence violates dependency edge
+
+REJECT any artifact IF:
+  id format invalid (not F-NNN | S-NNN | P-NNN | T-NNN)
+  timestamps missing timezone
+  author == approver (for gated artifacts)
+```
+
+### Code Marker Format
+
+```
+WHEN implementing a spec:
+  Add marker: // @spec S-NNN — {brief description}
+  Place marker: above the function/class/block that satisfies the spec
+  One marker per spec per implementation site
+
+WHEN auditing coverage:
+  grep -rn "@spec S-" ./src/
+  Cross-reference against spec registry
+  Flag: specs with no code markers (unimplemented)
+  Flag: code markers referencing non-existent specs (stale)
+```
+
+### Sizing Check
+
+```
+WHEN writing or reviewing a spec:
+  ASK: Can this be implemented atomically — no intermediate checkpoints?
+  IF requires_intermediate_saves THEN spec is too large → split
+
+WHEN decomposing plan into tasks:
+  ASK: Can one agent complete this task in one session?
+  IF requires_context_handoff THEN task is too large → split
+```
+
+### Traceability Audit
+
+```
+FOR each feature F-NNN:
+  1. List all specs where feature == F-NNN
+  2. For each spec: check @spec S-NNN exists in codebase
+  3. For each spec: check all ACs have passing tests
+  4. Check feature acceptance tests exist and pass
+  5. Result: PASS if all checks green, FAIL with specific gaps
+```
