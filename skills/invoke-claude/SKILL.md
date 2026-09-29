@@ -37,8 +37,8 @@ both blind) trades confirmation depth for speed.
 # Compute output path BEFORE launching (timestamp locks in)
 OUTFILE="reviews/<type>/$(date +%Y-%m-%dT%H-%M)_claude-<type>-review.md"
 
-timeout 300 claude -p "<PROMPT — include $OUTFILE>" \
-  --allowedTools "Write" "Edit"
+timeout 900 claude --model claude-opus-4-5 -p "<PROMPT — include $OUTFILE>" \
+  --allowedTools "Read" "Write" "Edit"
 ```
 
 ### Key flags
@@ -46,8 +46,9 @@ timeout 300 claude -p "<PROMPT — include $OUTFILE>" \
 | Flag | Purpose |
 |------|---------|
 | `-p "<prompt>"` | Single-turn pipeline mode — runs and exits |
-| `--allowedTools "Write" "Edit"` | Grants file creation/edit (required for output file) |
-| `timeout 600` | Safety ceiling; 5 min is too short for 8+ file reviews |
+| `--model claude-opus-4-5` | Explicit model selection — **required**; omitting uses the default which may not be the intended tier |
+| `--allowedTools "Read" "Write" "Edit"` | Each tool as a separate quoted string — **"Read" is mandatory**; without it Claude cannot read input files and hangs silently for the entire timeout |
+| `timeout 900` | Safety ceiling — 15 min; Opus reviews of 8+ files take 10-12 min |
 
 **Do NOT add** `--output-format text` when using `--allowedTools Write` — Claude
 writes the file via tool calls; `--output-format text` is only needed when you
@@ -60,8 +61,8 @@ ahead of time and can be included in the prompt:
 
 ```bash
 OUTFILE="reviews/spec/$(date +%Y-%m-%dT%H-%M)_claude-spec-review.md"
-timeout 300 claude -p "...write findings to $OUTFILE..." \
-  --allowedTools "Write" "Edit"
+timeout 900 claude --model claude-opus-4-5 -p "...write findings to $OUTFILE..." \
+  --allowedTools "Read" "Write" "Edit"
 ```
 
 This writes directly to the final location — no `git mv` needed, no overwrite risk.
@@ -109,7 +110,7 @@ cd /home/k82l0804/workarea/fox/synapse
 GROK_REVIEW="reviews/spec/2026-09-29T00-30_grok-spec-review.md"  # already written
 OUTFILE="reviews/spec/$(date +%Y-%m-%dT%H-%M)_claude-spec-review.md"
 
-timeout 300 claude -p \
+timeout 900 claude --model claude-opus-4-5 -p \
   "You are a read-only adversarial spec reviewer (Reviewer 2).
    Read ALL of: specs/S-011-product-registration.md,
    specs/S-012-daemon-engine.md, specs/S-013-signal-parser.md,
@@ -119,7 +120,7 @@ timeout 300 claude -p \
    ALSO read $GROK_REVIEW (Reviewer 1 — confirm + extend).
    Create $OUTFILE with your full findings.
    Verdict: APPROVE or REQUEST_CHANGES. Do NOT edit any existing spec." \
-  --allowedTools "Write" "Edit"
+  --allowedTools "Read" "Write" "Edit"
 ```
 
 ## Full example — spec review (blind, parallel with Grok)
@@ -130,21 +131,23 @@ cd /home/k82l0804/workarea/fox/synapse
 OUTFILE="reviews/spec/$(date +%Y-%m-%dT%H-%M)_claude-spec-review.md"
 
 # Run simultaneously with Grok (both blind)
-timeout 300 claude -p \
+timeout 900 claude --model claude-opus-4-5 -p \
   "You are a read-only adversarial spec reviewer (Reviewer 2, BLIND).
    Read ALL of: specs/S-011..S-015, specs/feature-spec-format.md,
    specs/task-format.md, specs/pipeline-signal-protocol.md.
    Do NOT read any prior reviews.
    Create $OUTFILE with your full findings.
    Verdict: APPROVE or REQUEST_CHANGES. Do NOT edit any existing spec." \
-  --allowedTools "Write" "Edit"
+  --allowedTools "Read" "Write" "Edit"
 ```
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
+| **Hangs for full timeout, no file** | Missing `"Read"` in `--allowedTools` — Claude can't read input files without it. Must be `--allowedTools "Read" "Write" "Edit"` (each tool separately quoted) |
 | Exit 0, no output, no file created | Remove `--output-format text`; Claude writes files via tool calls |
-| Exit 0, stdout output, no file | Add `--allowedTools "Write" "Edit"` |
+| Exit 0, stdout output, no file | Add `--allowedTools "Read" "Write" "Edit"` |
 | Billing/rate limit error | Switch to lower model tier (Opus 5 → Sonnet 5) |
 | Runs in ~3 seconds with no review | CLI not authenticated or model unavailable; check `claude -p "hello"` |
+| Wrong model used | Always pass `--model` explicitly; omitting it uses the CLI default which may not match the review tier |
