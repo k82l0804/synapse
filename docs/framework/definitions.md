@@ -1,6 +1,10 @@
 # Synapse Framework Handbook
 
-> **Audience:** Human operators making gate decisions, contributors onboarding to the Synapse workflow, and anyone who needs to understand *why* the process works the way it does. AI agents: skip to [Appendix C — Agent Quick Reference](#appendix-c--agent-quick-reference) for mechanical rules, or use [templates.md](templates.md) and Part 4 (Conformance Schema) directly.
+**Synapse** is an agentic pipeline orchestrator — it manages how AI agents and humans collaborate to move work from idea through spec, plan, and implementation to verified, tested code.
+
+> **Audience:** 
+- Human operators making gate decisions, contributors onboarding to the Synapse workflow, and anyone who needs to understand *why* the process works the way it does. 
+- AI agents: skip to [Appendix C — Agent Quick Reference](#appendix-c--agent-quick-reference) for mechanical rules, or use [templates.md](templates.md) and Part 4 (Conformance Schema) directly.
 
 ## What This Framework Does
 
