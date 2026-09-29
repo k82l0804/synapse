@@ -1,14 +1,36 @@
-# Synapse Framework: Definitions & Conformance
+# Synapse Framework — Definitions Handbook
 
-> **Status:** v2 — Baseline (dual-blind reviewed, traceability added)
-> **Scope:** Domain-agnostic core with explicit adaptation mechanism
+> **Audience:** AI agents creating and reviewing artifacts, human operators making gate decisions, and contributors onboarding to the Synapse workflow.
 
-**This document is the handbook.** Read it top-to-bottom for the complete framework.
-Detailed reference material is in companion files:
+## What This Framework Does
+
+This framework defines how work moves from an idea to verified code. It gives every artifact (feature, spec, plan, task) a standard structure, a lifecycle with review gates, and a traceability chain that connects stakeholder intent to tested implementation.
+
+### The Workflow in 30 Seconds
+
+```
+Stakeholder need
+    ↓
+Feature (F-NNN)          ← what capability to build, why it matters
+    ↓
+Spec (S-NNN)             ← what the system must do (acceptance criteria, contracts)
+    ↓
+Plan (P-NNN)             ← how to implement it (deliverables, verification)
+    ↓
+Tasks (T-NNN)            ← atomic units of work for an agent or developer
+    ↓
+Code + Tests             ← implementation with @spec markers for traceability
+    ↓
+Feature Acceptance Test  ← independent proof the feature works end-to-end
+```
+
+Each artifact is **reviewed** before the next layer begins. Specs and plans get dual-blind agent review + human approval. The human decides when to stop iterating — agents never approve.
+
+### Companion Files
 
 | File | Contents |
 |------|----------|
-| **definitions.md** (this file) | Principles, definitions, lifecycle & review, conformance, dependencies, traceability |
+| **definitions.md** (this file) | Definitions, lifecycle, design rules, conformance, dependencies, traceability |
 | [templates.md](templates.md) | Full YAML templates for Feature, Spec, Plan, Task, and Approval Record |
 | [examples.md](examples.md) | 3 worked examples (SW Dev, Nav Sim, Defect Fix) + negative examples |
 | [domain-adaptation.md](domain-adaptation.md) | Domain-agnostic design: what's invariant vs customizable (design intent only) |
@@ -17,123 +39,18 @@ Detailed reference material is in companion files:
 
 ## Table of Contents
 
-1. [Design Principles](#part-1--design-principles)
-2. [Definitions](#part-2--definitions) (Feature, Spec, AC, Plan, Task, Identification System)
-3. [Artifact Lifecycle & Review](#part-3--artifact-lifecycle--review)
+1. [Definitions](#part-1--definitions) — Feature, Spec, AC, Plan, Task, Identification System
+2. [Artifact Lifecycle & Review](#part-2--artifact-lifecycle--review) — Statuses, review cycle, gates, delegation
+3. [Design Rules](#part-3--design-rules) — Sizing, layer principle, task scope, non-feature work
 4. [Templates](#part-4--templates) → summary; full templates in [templates.md](templates.md)
-5. [Conformance Schema](#part-5--conformance-schema)
-6. [Dependency System](#part-6--dependency-system)
-7. [Worked Examples](#part-7--worked-examples) → summary; full examples in [examples.md](examples.md)
-8. [Traceability](#part-8--traceability)
+5. [Conformance Schema](#part-5--conformance-schema) — Validation rules, field constraints
+6. [Dependency System](#part-6--dependency-system) — Scope, types, cycles, ordering
+7. [Traceability](#part-7--traceability) — Chain, coverage matrices, @spec markers, completion predicates
+8. [Worked Examples](#part-8--worked-examples) → summary; full examples in [examples.md](examples.md)
 
 ---
 
-## Part 1 — Design Principles
-
-### The Sizing Rule
-
-**A spec describes what can be implemented atomically — without requiring intermediate checkpoints or partial-state commits.**
-
-This is the only sizing rule. "Session," "focus time," and other temporal measures are explicitly rejected as sizing criteria because:
-- Agent context windows vary by model tier
-- Human focus blocks vary by person and domain
-- External blockers (data, review, compute) are unpredictable
-
-The test is atomicity: can this unit be implemented as a single uninterruptible block of work that produces a verifiable deliverable? If the answer is "only with intermediate saves," the spec is too large.
-
-#### How sizing cascades through layers
-
-Atomicity is **estimated** when writing specs and **validated** when writing plans and tasks. Each layer transition is a checkpoint where mis-sizing is discovered and corrected:
-
-| Transition | Who validates | What they check | Signal it's wrong |
-|------------|-------------|-----------------|-------------------|
-| Feature → Specs | Spec writer | Can I define this as one atomic unit? | Need > 10 ACs, > 7 HLDs, or can't describe without "then checkpoint and..." |
-| Spec → Plan | Plan writer | Can I implement this without intermediate saves? | Implementation sequence requires waiting on external results between steps, or plan needs > 7 HLDs |
-| Plan → Tasks | Task creator | Can one agent complete each HLD without context overflow? | Single HLD becomes > 3 tasks, or task requires mid-task coordination |
-
-**Spec writing (estimation):** The spec writer sizes by asking "can a single specialist implement this atomically?" This is an estimate — the writer hasn't built it yet. The caps (≤ 10 ACs, ≤ 7 HLDs) are heuristics that correlate with atomicity but do not guarantee it.
-
-**Plan writing (first validation):** The planner decomposes the spec into concrete implementation steps. This is where mis-sizing is discovered. If the planner finds:
-- An HLD requires checkpoint-saving because a later HLD depends on its output through an external system
-- The implementation sequence has mandatory wait points (external compute, human review, data availability)
-- They need more than 7 HLDs to cover the spec
-
-Then the spec is not atomic. The planner must:
-1. Record the finding in the plan's **Open Questions** section
-2. Open Questions must be empty before PLAN GATE — so this forces the issue
-3. The resolution is either: (a) amend the spec via the Split Protocol, or (b) the plan reviewer confirms the implementation is genuinely atomic despite appearances
-
-**Task creation (second validation):** If tasks are used, each HLD should become 1-2 tasks. If a single HLD becomes > 3 tasks, the HLD was too coarse and the plan should be revised. Tasks are terminal — they cannot be split after creation. If scope grows mid-task, create additional tasks (don't expand existing ones).
-
-#### What happens when sizing is wrong
-
-The framework does not assume specs are correctly sized on first attempt. Sizing errors are caught and corrected:
-
-```
-Spec written (estimate)
-  ↓
-Plan written → planner discovers spec isn't atomic
-  ↓
-Open Question recorded: "S-042 requires intermediate checkpoint after HLD-3"
-  ↓
-PLAN GATE blocks (open questions non-empty)
-  ↓
-Resolution: split S-042 into S-042 + S-043 via Split Protocol
-  ↓
-New specs go through SPEC GATE
-  ↓
-New plans written for each
-```
-
-This is not a failure — it is the framework working as intended. The cost of splitting at plan time is lower than the cost of discovering mid-implementation that the work can't be completed atomically.
-
-### The Layer Principle
-
-Each artifact layer answers exactly one question:
-
-| Layer | Question | Owner | Gate |
-|-------|----------|-------|------|
-| Feature | What capability does the stakeholder get? | Stakeholder | FEATURE GATE |
-| Spec | What must this unit do? (contract) | Engineering Lead | SPEC GATE |
-| Plan | How will we build it? (blueprint) | Technical Reviewer | PLAN GATE |
-| Task | What is the current work assignment? | Implementer/Agent | None (operational) |
-
-**Decision rule for layer assignment:**
-- Names an algorithm, data structure, file, or implementation choice → Plan or lower
-- Names a tolerance, benchmark target, or verification method → Spec or lower
-- Names a business outcome observable without running code → Feature
-
-### The Task Layer
-
-Tasks are **optional but well-defined**. They exist when:
-1. Parallel assignment is needed (multiple agents or human teams)
-2. Progress tracking is needed below the plan level
-3. Retry isolation is needed (re-execute one deliverable without restarting the plan)
-4. Audit trail is needed for individual work units
-
-When tasks are not used, the plan's deliverables serve as implicit work units, but with reduced traceability. The framework does not pretend tasks are unnecessary — it makes their use explicit.
-
-### Non-Feature Work
-
-Not all work delivers stakeholder-observable capability. The framework recognizes:
-
-| Work Type | Authorizing Artifact | Gate |
-|-----------|---------------------|------|
-| Feature work | Feature → Spec → Plan | All three gates |
-| Defect fix | Defect ticket (external) → Spec → Plan | SPEC + PLAN gates |
-| Refactor | Refactor proposal → Spec → Plan | SPEC + PLAN gates |
-| Infrastructure | Infra ticket → Spec → Plan | SPEC + PLAN gates |
-| Research spike | Research question → Spike spec | SPIKE gate (time-boxed, no deliverable gate) |
-
-Non-feature specs use `feature: NONE` with a `work_type` field. They follow the same state machine but skip the FEATURE GATE.
-
-### Domain Agnosticism
-
-This framework is domain-agnostic by design. The core (statuses, templates, conformance, gates, dependencies, traceability) is invariant; terminology, caps, timeouts, and verification types can be customized per domain. See [domain-adaptation.md](domain-adaptation.md) for details.
-
----
-
-## Part 2 — Definitions
+## Part 1 — Definitions
 
 ### Feature
 
@@ -328,7 +245,7 @@ Each `↕` is maintained by a different mechanism: relational fields for artifac
 
 ---
 
-## Part 3 — Artifact Lifecycle & Review
+## Part 2 — Artifact Lifecycle & Review
 
 ### Artifact Statuses
 
@@ -472,6 +389,111 @@ For automated pipelines, gates can be delegated to agents:
 | PLAN_GATE | Review agent with `technical_review` permission | Automatic if configured in pipeline |
 
 Delegation does not remove the Author ≠ Approver constraint.
+
+---
+
+## Part 3 — Design Rules
+
+### The Sizing Rule
+
+**A spec describes what can be implemented atomically — without requiring intermediate checkpoints or partial-state commits.**
+
+This is the only sizing rule. "Session," "focus time," and other temporal measures are explicitly rejected as sizing criteria because:
+- Agent context windows vary by model tier
+- Human focus blocks vary by person and domain
+- External blockers (data, review, compute) are unpredictable
+
+The test is atomicity: can this unit be implemented as a single uninterruptible block of work that produces a verifiable deliverable? If the answer is "only with intermediate saves," the spec is too large.
+
+#### How sizing cascades through layers
+
+Atomicity is **estimated** when writing specs and **validated** when writing plans and tasks. Each layer transition is a checkpoint where mis-sizing is discovered and corrected:
+
+| Transition | Who validates | What they check | Signal it's wrong |
+|------------|-------------|-----------------|-------------------|
+| Feature → Specs | Spec writer | Can I define this as one atomic unit? | Need > 10 ACs, > 7 HLDs, or can't describe without "then checkpoint and..." |
+| Spec → Plan | Plan writer | Can I implement this without intermediate saves? | Implementation sequence requires waiting on external results between steps, or plan needs > 7 HLDs |
+| Plan → Tasks | Task creator | Can one agent complete each HLD without context overflow? | Single HLD becomes > 3 tasks, or task requires mid-task coordination |
+
+**Spec writing (estimation):** The spec writer sizes by asking "can a single specialist implement this atomically?" This is an estimate — the writer hasn't built it yet. The caps (≤ 10 ACs, ≤ 7 HLDs) are heuristics that correlate with atomicity but do not guarantee it.
+
+**Plan writing (first validation):** The planner decomposes the spec into concrete implementation steps. This is where mis-sizing is discovered. If the planner finds:
+- An HLD requires checkpoint-saving because a later HLD depends on its output through an external system
+- The implementation sequence has mandatory wait points (external compute, human review, data availability)
+- They need more than 7 HLDs to cover the spec
+
+Then the spec is not atomic. The planner must:
+1. Record the finding in the plan's **Open Questions** section
+2. Open Questions must be empty before PLAN GATE — so this forces the issue
+3. The resolution is either: (a) amend the spec via the Split Protocol, or (b) the plan reviewer confirms the implementation is genuinely atomic despite appearances
+
+**Task creation (second validation):** If tasks are used, each HLD should become 1-2 tasks. If a single HLD becomes > 3 tasks, the HLD was too coarse and the plan should be revised. Tasks are terminal — they cannot be split after creation. If scope grows mid-task, create additional tasks (don't expand existing ones).
+
+#### What happens when sizing is wrong
+
+The framework does not assume specs are correctly sized on first attempt. Sizing errors are caught and corrected:
+
+```
+Spec written (estimate)
+  ↓
+Plan written → planner discovers spec isn't atomic
+  ↓
+Open Question recorded: "S-042 requires intermediate checkpoint after HLD-3"
+  ↓
+PLAN GATE blocks (open questions non-empty)
+  ↓
+Resolution: split S-042 into S-042 + S-043 via Split Protocol
+  ↓
+New specs go through SPEC GATE
+  ↓
+New plans written for each
+```
+
+This is not a failure — it is the framework working as intended. The cost of splitting at plan time is lower than the cost of discovering mid-implementation that the work can't be completed atomically.
+
+### The Layer Principle
+
+Each artifact layer answers exactly one question:
+
+| Layer | Question | Owner | Gate |
+|-------|----------|-------|------|
+| Feature | What capability does the stakeholder get? | Stakeholder | FEATURE GATE |
+| Spec | What must this unit do? (contract) | Engineering Lead | SPEC GATE |
+| Plan | How will we build it? (blueprint) | Technical Reviewer | PLAN GATE |
+| Task | What is the current work assignment? | Implementer/Agent | None (operational) |
+
+**Decision rule for layer assignment:**
+- Names an algorithm, data structure, file, or implementation choice → Plan or lower
+- Names a tolerance, benchmark target, or verification method → Spec or lower
+- Names a business outcome observable without running code → Feature
+
+### The Task Layer
+
+Tasks are **optional but well-defined**. They exist when:
+1. Parallel assignment is needed (multiple agents or human teams)
+2. Progress tracking is needed below the plan level
+3. Retry isolation is needed (re-execute one deliverable without restarting the plan)
+4. Audit trail is needed for individual work units
+
+When tasks are not used, the plan's deliverables serve as implicit work units, but with reduced traceability. The framework does not pretend tasks are unnecessary — it makes their use explicit.
+
+### Non-Feature Work
+
+Not all work delivers stakeholder-observable capability. The framework recognizes:
+
+| Work Type | Authorizing Artifact | Gate |
+|-----------|---------------------|------|
+| Feature work | Feature → Spec → Plan | All three gates |
+| Defect fix | Defect ticket (external) → Spec → Plan | SPEC + PLAN gates |
+| Refactor | Refactor proposal → Spec → Plan | SPEC + PLAN gates |
+| Infrastructure | Infra ticket → Spec → Plan | SPEC + PLAN gates |
+| Research spike | Research question → Spike spec | SPIKE gate (time-boxed, no deliverable gate) |
+
+Non-feature specs use `feature: NONE` with a `work_type` field. They follow the same state machine but skip the FEATURE GATE.
+
+### Domain Agnosticism
+
+This framework is domain-agnostic by design. The core (statuses, templates, conformance, gates, dependencies, traceability) is invariant; terminology, caps, timeouts, and verification types can be customized per domain. See [domain-adaptation.md](domain-adaptation.md) for details.
 
 ---
 
@@ -695,23 +717,7 @@ If plan's implementation sequence violates a dependency edge, the plan is non-co
 
 ---
 
-
-## Part 7 — Worked Examples
-
-Full worked examples are in **[examples.md](examples.md)**.
-
-| Example | Domain | Artifacts | Key Lesson |
-|---------|--------|-----------|------------|
-| **1: Product Registration** | SW Dev | F-042, S-042, P-042 | Full chain: feature → spec → plan with coverage matrix |
-| **2: Large-Scale Simulation** | Nav Sim | F-101, S-101, P-101 | Spec says "sub-quadratic" — plan names Barnes-Hut. Layer discipline. |
-| **3: Signal Parser Crash** | SW Dev (defect) | S-200 | Non-feature work: `feature: NONE`, `work_type: defect` |
-| **Negative Examples** | — | — | What NOT to do: algorithm in feature, file paths in spec, self-approval |
-
-Each example includes conformance checks showing which rules pass, and the Feature Coverage Matrix demonstrating traceability.
-
----
-
-## Part 8 — Traceability
+## Part 7 — Traceability
 
 ### The Traceability Chain
 
@@ -856,6 +862,21 @@ Marking plans or tasks in code creates stale references:
 - Tasks are per-execution; multiple tasks may implement the same spec
 
 The spec is the Goldilocks artifact: stable enough to survive, granular enough to be useful.
+
+---
+
+## Part 8 — Worked Examples
+
+Full worked examples are in **[examples.md](examples.md)**.
+
+| Example | Domain | Artifacts | Key Lesson |
+|---------|--------|-----------|------------|
+| **1: Product Registration** | SW Dev | F-042, S-042, P-042 | Full chain: feature → spec → plan with coverage matrix |
+| **2: Large-Scale Simulation** | Nav Sim | F-101, S-101, P-101 | Spec says "sub-quadratic" — plan names Barnes-Hut. Layer discipline. |
+| **3: Signal Parser Crash** | SW Dev (defect) | S-200 | Non-feature work: `feature: NONE`, `work_type: defect` |
+| **Negative Examples** | — | — | What NOT to do: algorithm in feature, file paths in spec, self-approval |
+
+Each example includes conformance checks showing which rules pass, and the Feature Coverage Matrix demonstrating traceability.
 
 ---
 
