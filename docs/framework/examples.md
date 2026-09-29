@@ -59,6 +59,13 @@ the repository, creates necessary configuration, and confirms readiness.
 - OS-1: Multi-repository batch registration → deferred to F-045
 - OS-2: Remote repository registration (non-local) → WONTDO: security boundary
 - OS-3: Automatic pipeline start after registration → deferred to F-043
+
+## Acceptance Tests
+
+| Metric | Acceptance Test | Pass Criterion |
+|--------|----------------|----------------|
+| M-1 | `test:feature:f042-registration` | Create temp git repo, run `synapse add`, run `synapse list`, assert repo appears. Kill synapse, restart, `synapse list` again, assert still there. |
+| M-2 | `test:feature:f042-error-handling` | Run `synapse add` on non-git dir, nonexistent path, and file (not dir). Assert each exits non-zero with clear error including the path. Assert no partial state in DB. |
 ```
 
 **Conformance check:**
@@ -315,6 +322,13 @@ outputs and summary statistics.
 - OS-1: Real-time visualization → deferred to F-105
 - OS-2: Distributed multi-node execution → deferred to F-110
 - OS-3: GPU acceleration → WONTDO: hardware dependency outside project scope
+
+## Acceptance Tests
+
+| Metric | Acceptance Test | Pass Criterion |
+|--------|----------------|----------------|
+| M-1 | `test:feature:f101-50k-completion` | Submit 50k-agent scenario, wait for process exit 0, assert completion < 5 minutes wall-clock. |
+| M-2 | `test:feature:f101-reference-match` | Run 50k-agent scenario with reference seed, compare output trajectories to `ref/50k-uniform-t1000.h5`, assert RMSE ≤ 2%. |
 ```
 
 **Note:** M-2 uses "2% divergence" which is measurable by the validation team using their comparison script — the stakeholder does not need to understand the internal algorithm to run this check. The measurement procedure is explicit.

@@ -68,6 +68,16 @@ Test: A stakeholder can verify this by using the system, not by reading code.]
 
 - OS-1: [excluded item] → deferred to F-YYY
 - OS-2: [excluded item] → WONTDO: [rationale]
+
+## Acceptance Tests
+
+[Every metric must have a runnable end-to-end test. These test the FEATURE
+(stakeholder outcome), not individual spec ACs. Can be run by someone who
+has never read the specs.]
+
+| Metric | Acceptance Test | Pass Criterion |
+|--------|----------------|----------------|
+| M-1 | [test command or script] | [observable pass/fail] |
 ```
 
 ---

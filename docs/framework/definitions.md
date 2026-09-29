@@ -321,7 +321,7 @@ Full templates are in **[templates.md](templates.md)**.
 
 | Template | Purpose | Required Fields |
 |----------|---------|----------------|
-| **Feature** | Stakeholder-observable capability | id, version, name, status, work_type, author, stakeholders, domain, metrics, scope |
+| **Feature** | Stakeholder-observable capability | id, version, name, status, work_type, author, stakeholders, domain, metrics, scope, **acceptance tests** |
 | **Spec** | Engineering contract for one atomic unit | id, version, name, status, feature, ACs (1-10), HLDs (1-7), coverage matrix |
 | **Plan** | Implementation blueprint for one spec | id, spec, spec_version, deliverables, verification plan, open questions |
 | **Task** | Assignable work unit from a plan deliverable | id, plan, hld, status, owner |
@@ -725,6 +725,40 @@ export function handleAddCommand(path: string): Result<ProductId, AddError> {
 - Function-level comment for isolated AC implementations
 - Not needed for test files (tests reference specs via test names)
 
+### Feature Acceptance Tests
+
+Spec tests verify individual ACs. **Feature acceptance tests verify the stakeholder outcome end-to-end.**
+
+This distinction matters because:
+- Spec tests are narrow: each tests one AC in isolation
+- All spec tests can pass while the feature is broken (composition failure)
+- The pipeline says "done" based on exit codes, not based on understanding
+- Feature acceptance tests are the independent proof that the decomposition was correct
+
+**What a feature acceptance test is:**
+- Tests the **metric** directly, not the ACs
+- Exercises the full user-observable workflow, not isolated units
+- Written against the feature description and success metrics, not against spec internals
+- Can be run by someone who has never read the specs
+
+**What it is NOT:**
+- Not a spec test (those test ACs)
+- Not an integration test (those test component wiring)
+- Not a smoke test (those test "does it start")
+
+**Every feature metric must have a runnable acceptance test.** The test is defined in the Feature artifact and maps directly to the Success Metrics table:
+
+```
+| Metric | Acceptance Test | Pass Criterion |
+|--------|----------------|----------------|
+| M-1    | test:feature:f042-registration | exits 0, output contains product ID |
+| M-2    | test:feature:f042-error-paths  | exits 0, all error patterns matched |
+```
+
+**When to write acceptance tests:** After specs are approved, before or during implementation. They can be written by a different agent than the implementer — the test author reads the feature, not the plan.
+
+**Why this is independent of the pipeline:** The pipeline runs spec tests as part of plan verification. Feature acceptance tests run **after** the pipeline claims the feature is done. They are the external audit. If all spec tests pass but the feature acceptance test fails, the decomposition was wrong — a spec is missing an AC, or the ACs don't compose.
+
 ### Completion Predicates
 
 **Spec done:**
@@ -737,8 +771,11 @@ All ACs' verification methods pass. Specifically:
 1. All specs with `feature: F-XXX` have status = DONE
 2. Feature Coverage Matrix has no empty rows (no scope loss)
 3. Each metric (M-N) has a passing measurement recorded
+4. **All feature acceptance tests pass** (the independent proof)
 
-A feature cannot be marked DONE if any spec is still IN_PROGRESS, BLOCKED, or FAILED.
+A feature cannot be marked DONE if any spec is still IN_PROGRESS, BLOCKED, or FAILED, or if any acceptance test is failing.
+
+**The difference between steps 1-3 and step 4:** Steps 1-3 verify the process was followed. Step 4 verifies the outcome is correct. A feature can satisfy 1-3 and fail 4 — that means the process worked but the decomposition was wrong. This is the signal to amend specs, not to rerun the pipeline.
 
 ### Reverse Trace
 
