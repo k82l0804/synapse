@@ -129,6 +129,19 @@ This is why the read-only constraint is injected into every Grok invocation via 
 It is not a courtesy — it is a pipeline invariant. A Grok job that edits a file is a
 constraint violation, not a helpful shortcut.
 
+**Deferred idea: Recursive/Convergent Review (not implemented)**
+
+> The current cycle is: Generate → Review → Triage → Gate → Act (once).
+> A future variant could loop: Generate → Review → Triage → Auto-fix → Review → ... until the
+> Reviewer finds nothing new. The human gate would only fire at convergence, not every iteration.
+>
+> Why not now: gates are cheap when changes are small. The human gate catches direction errors
+> that the Reviewer+Triage loop cannot detect (the spec is technically correct but not what
+> was intended). Removing the gate prematurely risks building the right thing wrong.
+>
+> Worth revisiting when: (a) Reviewer-Triage pairs demonstrate reliable convergence in practice,
+> (b) we have confidence that "Reviewer finds nothing" reliably means "spec is correct as-intended."
+
 ---
 
 ## 2.6 Core Principle: Capability-Task Matching
