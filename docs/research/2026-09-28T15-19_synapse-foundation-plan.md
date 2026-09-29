@@ -374,6 +374,77 @@ Scenario: T3/L3 agent in Reviewer role
 
 ---
 
+## 2.9 Core Principle: Multi-Provider Review
+
+> **Independent reviewers must come from different providers.**
+> Same model called twice = same training = same blind spots. That is not review diversity; it is noise.
+> True structural independence requires different companies, different training corpora, different architectures.
+
+### Why two reviewers find different things
+
+A review is only as good as the reviewer's reference frame. Different models have:
+- Different training data cutoffs and corpora → different domain knowledge
+- Different architectural choices → different reasoning patterns
+- Different fine-tuning objectives → different things they look for
+
+Two independent reviewers from different providers produce reviews that are *complementary*, not redundant.
+The union of two independent reviews covers significantly more ground than either alone.
+
+This was observed empirically: AGY performed *content analysis* (logical consistency of acceptance criteria),
+Grok performed *contract analysis* (cross-referenced the format spec and protocol docs). Both found real issues
+the other missed. Neither review alone was sufficient.
+
+### Default dual-reviewer configuration
+
+| Slot | Agent | Provider | Model family | Role |
+|------|-------|----------|-------------|------|
+| Reviewer 1 | Grok CLI | xAI | Grok | Contract/schema analysis |
+| Reviewer 2 | Claude Code | Anthropic | Claude | Coherence/coverage analysis |
+
+The generator (AGY) uses Gemini (Google). All three providers are independent.
+
+**Reviewer-Generator Separation extended:**
+- Reviewers must be independent of the generator (different provider)
+- Reviewers must be independent of *each other* (different provider)
+- Same model called twice with different prompts is NOT dual review
+
+### When to use dual review
+
+| Artifact | Dual review? | Rationale |
+|----------|-------------|-----------|
+| Specs | **Yes** | Highest stakes — schema violations and contract gaps propagate through everything |
+| Plans | Recommended | Expensive to fix after implementation starts |
+| Code | Single review + tests | Test suite provides the independent signal; one review is sufficient |
+| Tasks | Single review | Derived directly from approved specs; single review is usually sufficient |
+
+### The merge step
+
+No separate merge step is needed. The Triage agent (AGY) reads *all* review documents and synthesizes them:
+- Finding caught by both reviewers → high confidence, fix immediately
+- Finding caught by one reviewer → standard confidence, fix or defer
+- Conflicting findings → escalate to human gate
+
+The triage output is a single unified recommendation set, regardless of how many reviews were produced.
+
+### Invoking reviewers
+
+```bash
+# Reviewer 1: Grok (in the artifact directory)
+grok
+> Review specs S-011..S-015 plus feature-spec-format.md and pipeline-signal-protocol.md.
+> Create grok-spec-review.md. Be adversarial. Read-only — do not edit any existing files.
+
+# Reviewer 2: Claude Code (in the artifact directory)
+claude -p --disallowedTools "Bash" \
+  "Review specs S-011..S-015 plus feature-spec-format.md and pipeline-signal-protocol.md.
+   Create claude-spec-review.md. Be adversarial. Read-only — create the review file only."
+
+# Triage: AGY reads both reviews, produces unified recommendations
+# Then: [SPEC GATE] human approves triage recommendations
+```
+
+---
+
 ## 3. The Front Door: `research-to-features` Skill
 
 
