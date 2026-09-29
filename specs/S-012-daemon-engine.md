@@ -1,9 +1,9 @@
 ---
 id: S-012
 name: daemon-engine
-status: draft
+status: approved
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-29
 author: research-to-features
 feature_registry_ref: S-012
 depends_on: [S-013, S-015]
@@ -54,7 +54,7 @@ idle      — product registered, no pipeline run started
 running   — a step is actively executing
 waiting   — daemon paused at a gate (GATE file written)
 stopping  — stop requested; daemon will halt after current step
-stopped   — was running; halted (manual stop or restart). `waiting` runs stay `waiting` on restart.
+stopped   — was `running`; halted by manual stop or daemon restart. `waiting` runs stay `waiting` on restart (GATE file remains; inbox still shows them).
 done      — all steps completed successfully
 failed    — terminal failure state; pipeline halts
 ```
@@ -64,7 +64,8 @@ failed    — terminal failure state; pipeline halts
 | Signal outcome | Run state transition | Notes |
 |---|---|---|
 | `STATUS=DONE` | `running → running` (next step) or `running → done` (after step 15) | Normal advance |
-| `STATUS=PARTIAL` | `running → running` (next step) | Daemon logs warnings to run log; advances |
+| `STATUS=PARTIAL` (steps 1–14) | `running → running` (next step) | Daemon logs warnings to run log; advances |
+| `STATUS=PARTIAL` (step 15) | `running → failed` | `failure_reason = "unresolved BLOCKING findings"` — pipeline halts; no silent `done` with open BLOCKINGs |
 | `STATUS=FAILED` | `running → failed` | Terminal; pipeline halts |
 | `ESCALATE>0` | `running → waiting` | Ad-hoc gate: daemon writes GATE file mid-sequence |
 | `SIGNAL_ABSENT` | `running → failed` | `failure_reason = "SIGNAL_ABSENT: ..."` |
@@ -88,9 +89,10 @@ failed    — terminal failure state; pipeline halts
 - **Visible Outcome:** Pipeline advances automatically. `synapse status <product>` shows
   the current step and status. When a gate is reached, the pipeline pauses and writes
   `.synapse/run/GATE-{run-id}.md`. When a specialist job completes, the next step starts
-  automatically. On daemon restart after reboot, runs that were `running` or `waiting` are
-  set to `stopped` — user must explicitly `synapse resume` unless `auto_resume: true` is
-  set in the product's entry in `repos.yaml` (default: `false`).
+  automatically. On daemon restart after reboot, runs that were `running` are set to
+  `stopped`; runs that were `waiting` remain `waiting` (GATE file stays on disk;
+  `synapse inbox` still shows them). A `stopped` run requires `synapse resume` to
+  continue unless `auto_resume: true` is set in `repos.yaml` (default: `false`).
 - **Non-Goal:** No parallel execution (accelerate mode is a future feature). No GUI.
   No per-product separate daemon processes — one shared daemon for all products.
 
@@ -103,10 +105,8 @@ failed    — terminal failure state; pipeline halts
 - [ ] AC-5: `synapse status <product>` reflects the most recently committed step name and `pipeline_runs.status` from `synapse.db`
 - [ ] AC-6: On daemon restart, runs that were `running` become `stopped`; `waiting` runs stay `waiting`; user must `synapse resume` (or `auto_resume: true`)
 - [ ] AC-7: `synapse stop <product>` sets status to `stopping`; daemon finishes the current step then halts
-- [ ] AC-8: `STATUS=PARTIAL` signal advances the pipeline (same as DONE) and logs warnings to the run log
-- [ ] AC-9: `ESCALATE>0` signal on any non-gate step triggers an ad-hoc gate (`running → waiting`)
-- [ ] AC-10: `TESTER FAIL>0` or `TYPECHECK=red` loops back to step 12 with `iteration` incremented; at iteration ≥ 3 escalates to gate
-- [ ] AC-11: `synapse reject <run-id>` at SPEC GATE rewinds `current_step` to step 1; at PLAN GATE rewinds to step 8
+- [ ] AC-8: Signal-driven state transitions: `STATUS=PARTIAL` on steps 1–14 advances the pipeline and logs a warning to the run log; `STATUS=PARTIAL` on step 15 sets run status to `failed` with `failure_reason = "unresolved BLOCKING findings"`; `ESCALATE>0` on any non-gate step triggers an ad-hoc gate (`running → waiting`)
+- [ ] AC-9: Tester failure and reject: `TESTER FAIL>0` or `TYPECHECK=red` loops back to step 12 with `iteration` incremented; at iteration ≥ 3 escalates to a gate instead of looping; `synapse reject <run-id>` at SPEC GATE rewinds `current_step` to step 1; at PLAN GATE rewinds to step 8; `iteration` is incremented on reject
 
 ## High-Level Tasks
 
@@ -127,7 +127,8 @@ failed    — terminal failure state; pipeline halts
 - MUST: starting a pipeline creates a `pipeline_runs` row with `status: running`
 - MUST: each non-gate step spawns exactly one specialist subprocess
 - MUST: absent or malformed signal causes run status to become `failed` (not `TASK_FAILED`)
-- MUST: `STATUS=PARTIAL` signal advances the pipeline and writes a warning to the run log
+- MUST: `STATUS=PARTIAL` on steps 1–14 advances the pipeline and writes a warning to the run log
+- MUST: `STATUS=PARTIAL` on step 15 (code-triage) sets run status to `failed` with `failure_reason = "unresolved BLOCKING findings"` (pipeline cannot reach `done` with unresolved BLOCKINGs)
 - MUST: `ESCALATE>0` on a non-gate step transitions `running → waiting` and writes a GATE file
 - MUST: `TESTER FAIL>0` or `TYPECHECK=red` loops back to step 12 with `iteration` incremented
 - MUST: at iteration ≥ 3 on a tester fail loop, escalate to a gate instead of looping

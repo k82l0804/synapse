@@ -1,9 +1,9 @@
 ---
 id: S-014
 name: human-gate
-status: draft
+status: approved
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-29
 author: research-to-features
 feature_registry_ref: S-014
 depends_on: [S-012]
@@ -28,11 +28,11 @@ reject is forbidden — the `--note` flag is required.
     showing run-id, product name, gate type, and artifact path for each
   - `synapse approve <run-id>` → pipeline advances to next step; daemon deletes the GATE file
     and sets run status `waiting → running`
-  - `synapse reject <run-id> --note "..."` → feedback file written to `reviews/feedback/`;
+  - `synapse reject <run-id> --note "..."` → GATE file deleted; feedback file written to `reviews/feedback/`;
     daemon sets run status `waiting → running` and rewinds `current_step` per the
     S-012 reject rule (SPEC GATE → step 1; PLAN GATE → step 8; `iteration` incremented);
     the specialist at the rewound step reads `reviews/feedback/` before generating output;
-    a new GATE file appears when the regenerated artifact reaches the gate again
+    a new GATE file is created when re-dispatch reaches the gate step again
   - `synapse reject <run-id>` without `--note` → exits non-zero: "rejection requires --note"
   - `synapse reject <run-id> --note ""` or `--note "   "` → exits non-zero: "note must not be empty"
 - **Non-Goal:** No desktop notifications — developer polls `synapse inbox` or sets up a
@@ -58,7 +58,7 @@ reject is forbidden — the `--note` flag is required.
 2. HLT-2: Implement `synapse inbox` — scans `.synapse/run/GATE-*.md`, filters to DB-confirmed `waiting` runs,
    formats output with run-id, product, gate type, artifact path
 3. HLT-3: Implement `synapse approve` — validates run-id, deletes GATE file, sets run status `waiting → running`
-4. HLT-4: Implement `synapse reject` — validates `--note` (required, non-empty after trim), writes feedback file to `reviews/feedback/`, sets run status `waiting → running`
+4. HLT-4: Implement `synapse reject` — validates `--note` (required, non-empty after trim), writes feedback file to `reviews/feedback/`, deletes the GATE file, sets run status `waiting → running`
 5. HLT-5: Implement `synapse inbox --count` — prints integer count only
 6. HLT-6: Implement error handling — unknown run-id, already-resolved, missing/empty note → non-zero exit with message
 
@@ -67,6 +67,7 @@ reject is forbidden — the `--note` flag is required.
 ### MUST
 - MUST: `synapse inbox` shows all waiting gates with run-id, product name, gate type, and artifact path
 - MUST: `synapse approve <run-id>` deletes the GATE-{run-id}.md file and advances pipeline
+- MUST: `synapse reject <run-id> --note "..."` deletes the GATE-{run-id}.md file (a new GATE file is created when re-dispatch reaches the gate again)
 - MUST: `synapse reject <run-id> --note "..."` writes a feedback file containing the note text
 - MUST: rejection without `--note` exits non-zero
 - MUST: rejection with empty or whitespace-only `--note` exits non-zero
@@ -75,5 +76,4 @@ reject is forbidden — the `--note` flag is required.
 ### MUST NOT
 - MUST NOT: allow empty or whitespace-only `--note` — `--note ""` and `--note "  "` both exit non-zero
 - MUST NOT: auto-approve any gate
-- MUST NOT: delete GATE file on reject (gate stays open until daemon re-dispatches and new GATE appears)
 - MUST NOT: require network access or a running GUI

@@ -1,9 +1,9 @@
 ---
 id: S-013
 name: signal-parser
-status: draft
+status: approved
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-29
 author: research-to-features
 feature_registry_ref: S-013
 ---
@@ -22,11 +22,7 @@ guessing, no "close enough."
 
 - **User:** The daemon (internal component — not directly user-facing)
 - **Trigger:** A specialist subprocess writes its output artifact and exits
-- **Visible Outcome:** `synapse status` reflects the correct next state (advancing, waiting,
-  or failed) immediately after the subprocess exits. `synapse.db` signals table contains
-  a parsed row with `auto_fix`, `escalate`, `pass`, `fail`, `skipped`, `typecheck` fields.
-  If signal is absent: run status `failed`, `failure_reason = "SIGNAL_ABSENT: no valid signal on last line of artifact"`.
-  If malformed: run status `failed`, `failure_reason = "SCHEMA_VIOLATION: signal present but malformed: <last-line>"`.
+- **Visible Outcome:** The daemon receives a parse outcome (`ok | SIGNAL_ABSENT | SCHEMA_VIOLATION`) and reason string; S-012 HLT-5 then applies the appropriate run-status transition. `synapse.db` signals table contains a parsed row with `auto_fix`, `escalate`, `pass`, `fail`, `skipped`, `typecheck` fields. `pipeline_runs.failure_reason` is set by S-013 on SIGNAL_ABSENT or SCHEMA_VIOLATION.
 - **Non-Goal:** Does not validate the content of the artifact beyond the last line.
   Does not retry failed signals automatically. Does not support signals anywhere except the last line.
 
@@ -55,8 +51,8 @@ guessing, no "close enough."
 3. HLT-3: Implement `parseTesterSignal(line)` — regex parse, returns typed result or null
 4. HLT-4: Implement `parseSignal(artifactPath)` — calls readLastLine, tries both parsers, returns result with type
 5. HLT-5: Implement failure classification — maps absent/malformed to `SIGNAL_ABSENT` / `SCHEMA_VIOLATION`
-6. HLT-6: Implement DB write — inserts parsed signal into `signals` table, updates `pipeline_runs.last_signal`,
-   `pipeline_runs.status`, and `pipeline_runs.failure_reason`
+6. HLT-6: Implement DB write — inserts parsed signal into `signals` table, updates `pipeline_runs.last_signal`
+   and `pipeline_runs.failure_reason`. Returns parse outcome (`ok | SIGNAL_ABSENT | SCHEMA_VIOLATION`) for S-012 HLT-5 to act on. Does NOT write `pipeline_runs.status` (owned by S-012).
 
 ## DB Schema
 
@@ -81,8 +77,9 @@ signals (
 );
 
 -- pipeline_runs columns updated by this feature
+-- S-013 owns last_signal and failure_reason ONLY.
+-- S-012 HLT-5 is the sole owner of pipeline_runs.status.
 pipeline_runs.last_signal    INTEGER REFERENCES signals(id)  -- most recent parsed signal
-pipeline_runs.status         TEXT                            -- run status enum (see S-012)
 pipeline_runs.failure_reason TEXT                            -- set on SIGNAL_ABSENT or SCHEMA_VIOLATION
 ```
 

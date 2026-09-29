@@ -1,9 +1,9 @@
 ---
 id: S-011
 name: product-registration
-status: draft
+status: approved
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-09-29
 author: research-to-features
 feature_registry_ref: S-011
 ---
@@ -74,9 +74,10 @@ ready for a pipeline run.
 - MUST: `synapse add` on an already-registered path is idempotent (exits 0, prints warning)
 - MUST: `synapse add` on a non-git path exits non-zero with a clear error message
 - MUST: `.synapse/run/` is added to the repo's `.gitignore`
+- MUST: `.synapse/run/` line is not duplicated in `.gitignore` if already present (idempotent append — running `synapse add` twice does not add the line twice)
 
 ### MUST NOT
-- MUST NOT: modify any pre-existing file inside the registered repo; creating empty `.gitkeep` markers in newly-created dirs is permitted
+- MUST NOT: modify any pre-existing file inside the registered repo; permitted exceptions: (1) creating empty `.gitkeep` markers in newly-created dirs, and (2) appending a single `.synapse/run/` line to an existing `.gitignore` when the line is not already present
 - MUST NOT: start any pipeline step or agent subprocess
 - MUST NOT: require `AGENTS.md` to exist (warn only)
 - MUST NOT: exit non-zero when dirs already exist
