@@ -17,7 +17,7 @@ Detailed reference material is in companion files:
 ## Table of Contents
 
 1. [Design Principles](#part-1--design-principles)
-2. [Definitions](#part-2--definitions)
+2. [Definitions](#part-2--definitions) (Feature, Spec, AC, Plan, Task, Identification System)
 3. [Artifact Lifecycle & Review](#part-3--artifact-lifecycle--review)
 4. [Templates](#part-4--templates) → summary; full templates in [templates.md](templates.md)
 5. [Conformance Schema](#part-5--conformance-schema)
@@ -228,6 +228,99 @@ A spec has 1-10 ACs. ACs are the atomic unit of verification — 'spec done' mea
 - Serial execution by a single agent
 - Plan small enough to complete atomically
 - No audit requirements
+
+---
+
+### Identification System
+
+Every artifact has a unique, immutable ID. The ID system is how artifacts reference each other, how code traces back to requirements, and how audits verify coverage. Industry standards (ISO 26262, DO-178C) require traceability but do not mandate a specific format — the convention below follows the Prefix + Flat Numbering pattern used in Requirements Traceability Matrices (RTMs).
+
+#### ID Format
+
+| Artifact | Prefix | Format | Example | Sequence |
+|----------|--------|--------|---------|----------|
+| Feature | `F-` | `F-NNN` | F-042 | Monotonic per domain |
+| Spec | `S-` | `S-NNN` | S-042 | Monotonic global |
+| Plan | `P-` | `P-NNN` | P-042 | Monotonic global |
+| Task | `T-` | `T-NNN` | T-003 | Monotonic per plan |
+
+**Rules:**
+- IDs are **immutable** — once assigned, never change. A renamed artifact gets a new ID.
+- IDs are **never reused** — cancelled or abandoned artifacts retain their IDs.
+- IDs are **monotonic** — each new ID is greater than all previous IDs in its sequence.
+- Split artifacts get **new IDs** (not suffixes like S-042a — use S-043, S-044).
+
+#### Flat IDs vs Hierarchical IDs (Design Decision)
+
+Industry practice offers two approaches:
+
+| Approach | Example | Pros | Cons |
+|----------|---------|------|------|
+| **Flat + relational fields** (our choice) | S-042 with `feature: F-042` | IDs survive splits and supersession; parentage is queryable; simpler regex | Must read frontmatter to find parent |
+| Hierarchical / composite | FEAT-042.SPEC-1.PLAN-A | Parentage visible in the string | IDs must change when artifacts are split, moved, or re-parented; harder to parse |
+
+**Why we chose flat:** Specs get split (Split Protocol). Plans get rewritten (Replan Protocol). Features get reorganized. In all three cases, flat IDs remain stable — the artifact keeps its identity. With hierarchical IDs, splitting S-042 would require renaming FEAT-042.SPEC-1 to FEAT-042.SPEC-1a or similar, breaking all references. Flat IDs + relational fields give us the same traceability without the rename cascade.
+
+#### Relational Fields (How Artifacts Reference Each Other)
+
+Each artifact carries fields that link it to its parent and children. These are the traceability edges:
+
+```
+Feature F-042
+  └── specs: [S-042, S-043]          ← derived (populated as specs are written)
+
+Spec S-042
+  ├── feature: F-042                  ← upward link
+  └── depends_on: [{id: S-041, ...}] ← lateral link
+
+Plan P-042
+  ├── spec: S-042                     ← upward link (1:1)
+  └── spec_version: 1                ← version pin
+
+Task T-003
+  ├── plan: P-042                     ← upward link
+  └── hld: HLD-2                      ← which deliverable
+```
+
+**Traceability is maintained by relational fields, not by ID structure.** Given any artifact, you can navigate up (`spec → feature`), down (`feature → specs`), or laterally (`spec → depends_on`).
+
+#### Code Markers
+
+Implemented code references the spec it satisfies using `@spec` tags:
+
+```typescript
+// @spec S-042 — Product registration command handler
+export function handleAddCommand(path: string): Result<ProductId, AddError> { ... }
+```
+
+This is equivalent to the industry `@trace` convention (see ISO 26262 §8.4.4, DO-178C §5.5). We use `@spec` instead of `@trace` because we only mark specs in code — plans and tasks are NOT marked (see Part 9: Traceability for rationale).
+
+**CI / audit support:** A simple regex extracts all traced specs from the codebase:
+
+```bash
+grep -rn "@spec S-" ./src/          # Find all spec references in code
+grep -rn "@spec S-042" ./src/       # Find all code implementing S-042
+```
+
+Cross-referencing this against the spec registry produces a coverage report: which specs have code, which don't, and which code references non-existent specs.
+
+#### RTM (Requirements Traceability Matrix)
+
+The full traceability chain, as maintained by the identification system:
+
+```
+Feature IS-N / M-N                    (what the stakeholder wants)
+    ↕ Feature Coverage Matrix
+Spec AC-N                             (what the system must do)
+    ↕ Coverage Matrix
+MUST / MUST NOT                       (the contract)
+    ↕ Verification Plan
+Test                                  (the proof)
+    ↕ @spec tag
+Code                                  (the implementation)
+```
+
+Each `↕` is maintained by a different mechanism: relational fields for artifact-to-artifact links, coverage matrices for AC-to-MUST links, verification plans for MUST-to-test links, and `@spec` tags for test/code-to-spec links.
 
 ---
 
