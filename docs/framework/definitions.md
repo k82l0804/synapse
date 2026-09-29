@@ -8,9 +8,10 @@ Detailed reference material is in companion files:
 
 | File | Contents |
 |------|----------|
-| **definitions.md** (this file) | Principles, definitions, state machine, conformance, gates, dependencies, domain adaptation, traceability |
+| **definitions.md** (this file) | Principles, definitions, lifecycle & review, conformance, dependencies, traceability |
 | [templates.md](templates.md) | Full YAML templates for Feature, Spec, Plan, Task, and Approval Record |
 | [examples.md](examples.md) | 3 worked examples (SW Dev, Nav Sim, Defect Fix) + negative examples |
+| [domain-adaptation.md](domain-adaptation.md) | Domain-agnostic design: what's invariant vs customizable (design intent only) |
 
 ---
 
@@ -22,9 +23,8 @@ Detailed reference material is in companion files:
 4. [Templates](#part-4--templates) → summary; full templates in [templates.md](templates.md)
 5. [Conformance Schema](#part-5--conformance-schema)
 6. [Dependency System](#part-6--dependency-system)
-7. [Domain Adaptation](#part-7--domain-adaptation)
-8. [Worked Examples](#part-8--worked-examples) → summary; full examples in [examples.md](examples.md)
-9. [Traceability](#part-9--traceability)
+7. [Worked Examples](#part-7--worked-examples) → summary; full examples in [examples.md](examples.md)
+8. [Traceability](#part-8--traceability)
 
 ---
 
@@ -126,6 +126,10 @@ Not all work delivers stakeholder-observable capability. The framework recognize
 | Research spike | Research question → Spike spec | SPIKE gate (time-boxed, no deliverable gate) |
 
 Non-feature specs use `feature: NONE` with a `work_type` field. They follow the same state machine but skip the FEATURE GATE.
+
+### Domain Agnosticism
+
+This framework is domain-agnostic by design. The core (statuses, templates, conformance, gates, dependencies, traceability) is invariant; terminology, caps, timeouts, and verification types can be customized per domain. See [domain-adaptation.md](domain-adaptation.md) for details.
 
 ---
 
@@ -680,24 +684,8 @@ If plan's implementation sequence violates a dependency edge, the plan is non-co
 
 ---
 
-## Part 7 — Domain Adaptation
 
-> **Status: Design intent only.** This framework is used for software development today. The domain adaptation mechanism described below has not been implemented or tested with a second domain. It is included to record the architectural decision that the framework should be domain-agnostic, not to prescribe a working mechanism.
-
-### The Principle
-
-The framework separates an **invariant core** (statuses, templates, conformance, gates, dependencies, traceability) from **domain-customizable aspects** (terminology, verification types, AC/HLD caps, gate timeouts, additional required fields).
-
-If and when the framework is applied to a non-software domain (e.g., simulation engineering, legal compliance), the customizable aspects would be captured in a domain profile that extends the core. The invariant core cannot be relaxed — only tightened or extended.
-
-**What can be customized:** Terminology labels (not semantics), verification types, AC/HLD limits (with justification), gate timeouts, additional required fields per artifact type, measurement procedures.
-
-**What cannot be customized:** Status values and transitions, required template fields, conformance schema rules, gate protocol (Author ≠ Approver), dependency system, split/replan protocols, coverage matrix requirement.
-
-See the worked examples in [examples.md](examples.md) (Example 2: Nav Sim) for an illustration of how the framework applies to a non-software domain.
-
-
-## Part 8 — Worked Examples
+## Part 7 — Worked Examples
 
 Full worked examples are in **[examples.md](examples.md)**.
 
@@ -712,7 +700,7 @@ Each example includes conformance checks showing which rules pass, and the Featu
 
 ---
 
-## Part 9 — Traceability
+## Part 8 — Traceability
 
 ### The Traceability Chain
 
