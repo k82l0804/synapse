@@ -18,14 +18,13 @@ Detailed reference material is in companion files:
 
 1. [Design Principles](#part-1--design-principles)
 2. [Definitions](#part-2--definitions)
-3. [State Machine](#part-3--state-machine)
+3. [Artifact Lifecycle & Review](#part-3--artifact-lifecycle--review)
 4. [Templates](#part-4--templates) → summary; full templates in [templates.md](templates.md)
 5. [Conformance Schema](#part-5--conformance-schema)
-6. [Gate Protocol](#part-6--gate-protocol)
-7. [Dependency System](#part-7--dependency-system)
-8. [Domain Adaptation](#part-8--domain-adaptation)
-9. [Worked Examples](#part-9--worked-examples) → summary; full examples in [examples.md](examples.md)
-10. [Traceability](#part-10--traceability)
+6. [Dependency System](#part-6--dependency-system)
+7. [Domain Adaptation](#part-7--domain-adaptation)
+8. [Worked Examples](#part-8--worked-examples) → summary; full examples in [examples.md](examples.md)
+9. [Traceability](#part-9--traceability)
 
 ---
 
@@ -232,86 +231,139 @@ A spec has 1-10 ACs. ACs are the atomic unit of verification — 'spec done' mea
 
 ---
 
-## Part 3 — State Machine
+## Part 3 — Artifact Lifecycle & Review
 
-### Artifact Lifecycle States
+### Artifact Statuses
+
+Every artifact has a status that tracks where it is in its lifecycle:
+
+| Status | Meaning | Applies To |
+|--------|---------|------------|
+| `DRAFT` | Being written or revised. Includes all review iterations. | Feature, Spec, Plan, Task |
+| `APPROVED` | Passed gate review, authorized for next phase | Feature, Spec, Plan |
+| `IN_PROGRESS` | Active work underway | Feature, Plan, Task |
+| `BLOCKED` | Cannot proceed — external dependency or unresolved issue | Feature, Spec, Plan, Task |
+| `DONE` | All acceptance criteria verified, artifact complete | Feature, Spec, Plan, Task |
+| `FAILED` | Verification failed or implementation proved impossible | Plan, Task |
+| `ABANDONED` | Intentionally stopped, will not be completed (terminal) | Feature, Spec, Plan, Task |
+| `SUPERSEDED` | Replaced by a newer version (terminal) | Feature, Spec, Plan |
+
+**Simplified transitions:**
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │                                         │
-                    ▼                                         │
-┌──────────┐    ┌──────────┐    ┌───────────┐    ┌──────────┐ │
-│  DRAFT   │───▶│ PENDING  │───▶│ APPROVED  │───▶│   DONE   │ │
-└──────────┘    │  REVIEW  │    └───────────┘    └──────────┘ │
-     │          └──────────┘          │                       │
-     │               │                │                       │
-     │               ▼                ▼                       │
-     │          ┌──────────┐    ┌───────────┐                 │
-     │          │ REVISION │    │IN_PROGRESS│                 │
-     │          │ REQUESTED│    └───────────┘                 │
-     │          └──────────┘          │                       │
-     │               │                │                       │
-     │               │                ▼                       │
-     │               │          ┌───────────┐                 │
-     └───────────────┴─────────▶│  BLOCKED  │─────────────────┘
-                                └───────────┘
-                                      │
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-              ┌──────────┐    ┌───────────┐    ┌───────────────┐
-              │  FAILED  │    │ ABANDONED │    │  SUPERSEDED   │
-              └──────────┘    └───────────┘    └───────────────┘
+DRAFT ──(review cycle)──→ APPROVED ──→ IN_PROGRESS ──→ DONE
+                                            │             │
+                                            ▼             ▼
+                                         BLOCKED      SUPERSEDED
+                                            │
+                                      ┌─────┼─────┐
+                                      ▼     ▼     ▼
+                                   DRAFT  FAILED  ABANDONED
 ```
 
-### State Definitions
+Note: Specs do not have IN_PROGRESS or FAILED because specs are contracts, not work. Plans have those states because plans are executed. Tasks do not go through gate review (they are operational).
 
-| State | Meaning | Exit transitions |
-|-------|---------|------------------|
-| `DRAFT` | Initial creation, not yet submitted for review | → PENDING_REVIEW, → ABANDONED |
-| `PENDING_REVIEW` | Submitted for gate approval, awaiting decision | → APPROVED, → REVISION_REQUESTED, → BLOCKED |
-| `REVISION_REQUESTED` | Gate reviewer requested changes | → DRAFT (rework), → ABANDONED |
-| `APPROVED` | Passed gate, authorized for next phase | → IN_PROGRESS, → SUPERSEDED, → BLOCKED |
-| `IN_PROGRESS` | Active work (implementation for plans, spec decomposition for features) | → DONE, → BLOCKED, → FAILED |
-| `BLOCKED` | Cannot proceed due to external dependency or unresolved issue | → DRAFT, → IN_PROGRESS, → ABANDONED, → FAILED |
-| `DONE` | All acceptance criteria verified, artifact complete | → SUPERSEDED (if requirements change) |
-| `FAILED` | Verification failed or implementation impossible | → DRAFT (rework), → ABANDONED |
-| `ABANDONED` | Intentionally stopped, will not be completed | Terminal |
-| `SUPERSEDED` | Replaced by a newer version | Terminal |
+### The Review Cycle
 
-### Transition Rules
+Artifacts stay in DRAFT throughout all review iterations. The review cycle is iterative refinement, not a single-pass gate:
 
-| Transition | Predicate | Actor |
-|------------|-----------|-------|
-| DRAFT → PENDING_REVIEW | All required fields present, conformance check passes | Author |
-| PENDING_REVIEW → APPROVED | Gate approver signs with no BLOCKING findings | Gate Approver |
-| PENDING_REVIEW → REVISION_REQUESTED | Gate approver cites specific required changes | Gate Approver |
-| REVISION_REQUESTED → DRAFT | Author acknowledges and begins rework | Author |
-| APPROVED → IN_PROGRESS | Work begins (plan: implementation starts; feature: specs written) | Owner |
-| IN_PROGRESS → DONE | All ACs pass verification | Verifier (distinct from implementer for plans) |
-| IN_PROGRESS → BLOCKED | External blocker identified | Owner |
-| IN_PROGRESS → FAILED | Verification fails, rework needed | Verifier |
-| BLOCKED → IN_PROGRESS | Blocker resolved | Owner |
-| BLOCKED → FAILED | Blocker determined unresolvable | Owner + Approver |
-| FAILED → DRAFT | Rework path identified | Author |
-| Any → ABANDONED | Intentional cancellation | Owner + Approver |
-| DONE → SUPERSEDED | Newer version approved | Author of successor |
+```
+Author writes draft
+  ↓
+Reviewer 1 (blind) produces findings doc
+  ↓
+Author fixes obvious issues
+  ↓
+Reviewer 2 (blind or sees Reviewer 1) produces findings doc
+  ↓
+Findings merged into single review doc
+  ↓
+Triage: classify each finding as must-fix / implementer-decides / deferred
+  ↓
+Must-fix patches applied to draft
+  ↓
+Human decision: APPROVE (→ status becomes APPROVED) or iterate again
+```
 
-### Per-Artifact State Applicability
+**Key points:**
+- The artifact stays in `DRAFT` through all of this. There is no "PENDING_REVIEW" status — review is part of drafting.
+- Agent reviewers produce findings. They do NOT approve. Approval is a human decision.
+- Multiple reviewers (ideally independent/blind) find more issues than a single reviewer. Our empirical experience: dual-blind review (Grok + Claude) surfaces 2-3x more issues than single review.
+- Findings are classified by severity: `BLOCKING` (must fix), `WARNING` (should fix), `INFO` (note for future).
 
-| State | Feature | Spec | Plan | Task |
-|-------|---------|------|------|------|
-| DRAFT | ✓ | ✓ | ✓ | ✓ |
-| PENDING_REVIEW | ✓ | ✓ | ✓ | — |
-| REVISION_REQUESTED | ✓ | ✓ | ✓ | — |
-| APPROVED | ✓ | ✓ | ✓ | — |
-| IN_PROGRESS | ✓ | — | ✓ | ✓ |
-| BLOCKED | ✓ | ✓ | ✓ | ✓ |
-| DONE | ✓ | ✓ | ✓ | ✓ |
-| FAILED | — | — | ✓ | ✓ |
-| ABANDONED | ✓ | ✓ | ✓ | ✓ |
-| SUPERSEDED | ✓ | ✓ | ✓ | — |
+#### The Iteration Problem (Open)
 
-Note: Specs do not have IN_PROGRESS or FAILED because specs are contracts, not work. Plans have those states because plans are executed.
+**We do not have a precise method for determining when to stop iterating.** This is an honest gap.
+
+The risks of each direction:
+
+| Too few iterations | Too many iterations |
+|---|---|
+| Real defects escape to implementation | LLMs start inventing problems that don't exist |
+| Cost compounds downstream (spec bug → plan bug → code bug → test bug) | Diminishing returns — iteration 4 finds cosmetic issues, not structural ones |
+| False confidence in artifacts | Review doom loop — never converge, never ship |
+
+**Current heuristics (not rules):**
+
+1. **Iteration 1** always finds real issues. Do at least one review pass.
+2. **Iteration 2** with a different reviewer catches what the first missed. Usually worth doing for specs and plans.
+3. **Iteration 3** is the judgment call. If iteration 2 found BLOCKING issues, iterate. If it found only WARNINGs and INFOs, triage and approve.
+4. **After iteration 3**, the human should exercise the gate — approve with known limitations, or declare the artifact needs architectural rethinking (not more review passes).
+5. **Never let the reviewers decide when to stop.** That's the human's job. Reviewers will always find something.
+
+**The triage step is critical.** Not every finding requires a fix. The human classifies:
+
+| Classification | Action |
+|---|---|
+| Must-fix | Patch the artifact before approval |
+| Implementer-decides | Record in the plan; the implementer chooses the approach |
+| Deferred | Record in `tasks/deferred.md`; scheduled for a future phase |
+| Disagree | Document rationale for rejecting the finding |
+
+#### Graduated Review Depth
+
+Not all artifacts need the same review intensity:
+
+| Artifact Type | Recommended Review | Rationale |
+|---|---|---|
+| **Specs** | Dual-blind (2 independent reviewers) | Spec bugs amplify 4-5x downstream |
+| **Plans** | Dual-blind (2 independent reviewers) | Contract artifact; expensive to fix post-implementation |
+| **Code** | Single reviewer + test suite | Tests are the independent signal; review catches design issues |
+| **Tasks** | Single reviewer | Derived from approved specs; lower risk |
+| **Features** | Stakeholder review | Business decision, not technical review |
+
+### Gate Definitions
+
+Despite the iterative review process, approval decisions are formal:
+
+| Gate | Artifact | Approver Role | Approver Must Not Be |
+|------|----------|--------------|---------------------|
+| FEATURE_GATE | Feature | Stakeholder with role=approver | Author |
+| SPEC_GATE | Spec | Engineering lead or delegate | Author |
+| PLAN_GATE | Plan | Technical reviewer | Author or spec author |
+| SPIKE_GATE | Spike spec | Research lead | Author |
+
+**Author ≠ Approver** is an invariant. Agent reviewers inform the decision; the human (or delegated authority) makes it.
+
+### Approval Records
+
+When a gate decision is made, an Approval Record is created:
+- Decision: `APPROVED`, `REVISION_REQUESTED`, or `REJECTED`
+- Approval records are immutable and linked to artifact version
+- If REJECTED, the approver must cite specific BLOCKING findings
+- After 3 revision cycles without approval, the artifact transitions to BLOCKED for architectural review
+
+### Delegation
+
+For automated pipelines, gates can be delegated to agents:
+
+| Gate | May Delegate To | Constraint |
+|------|-----------------|------------|
+| FEATURE_GATE | Director agent with `stakeholder_proxy` permission | Delegation recorded in feature metadata |
+| SPEC_GATE | Review agent with `engineering_review` permission | Automatic if configured in pipeline |
+| PLAN_GATE | Review agent with `technical_review` permission | Automatic if configured in pipeline |
+
+Delegation does not remove the Author ≠ Approver constraint.
 
 ---
 
@@ -431,63 +483,9 @@ When a plan is rejected or fails and rework is needed:
 
 ---
 
-## Part 6 — Gate Protocol
-
-### Gate Definitions
-
-| Gate | Artifact | Approver Role | Approver Must Not Be |
-|------|----------|--------------|---------------------|
-| FEATURE_GATE | Feature | Stakeholder with role=approver | Author |
-| SPEC_GATE | Spec | Engineering lead or delegate | Author |
-| PLAN_GATE | Plan | Technical reviewer | Author or spec author |
-| SPIKE_GATE | Spike spec | Research lead | Author |
-
-### Approval Process
-
-1. **Submission:** Author sets status to `PENDING_REVIEW`
-2. **Review:** Approver evaluates artifact against conformance schema and domain requirements
-3. **Decision:** Approver creates an Approval Record with one of:
-   - `APPROVED` — artifact may proceed to next phase
-   - `REVISION_REQUESTED` — specific changes required, artifact returns to DRAFT
-   - `REJECTED` — fundamental issues, artifact transitions to ABANDONED or requires new ID
-4. **Record:** Approval record is immutable and linked to artifact version
-
-### Delegation
-
-For unattended/automated pipelines, gates can be delegated:
-
-| Gate | May Delegate To | Delegation Record |
-|------|-----------------|-------------------|
-| FEATURE_GATE | Director agent with `stakeholder_proxy` permission | Delegation must be recorded in feature metadata |
-| SPEC_GATE | Review agent with `engineering_review` permission | Automatic if configured in pipeline |
-| PLAN_GATE | Review agent with `technical_review` permission | Automatic if configured in pipeline |
-
-Delegation does not remove the Author ≠ Approver constraint.
-
-### Timeout Behavior
-
-| Gate | Default Timeout | On Timeout |
-|------|-----------------|------------|
-| FEATURE_GATE | 7 days | Escalate to stakeholder list; after 14 days, BLOCKED |
-| SPEC_GATE | 3 days | Escalate to engineering lead; after 7 days, BLOCKED |
-| PLAN_GATE | 2 days | Escalate to tech lead; after 5 days, BLOCKED |
-
-Timeouts are configurable per domain profile. BLOCKED artifacts require manual intervention.
-
-### Rejection Handling
-
-When an artifact is rejected (REVISION_REQUESTED):
-
-1. Approver must cite specific findings (BLOCKING items at minimum)
-2. Artifact transitions to REVISION_REQUESTED
-3. Author has two options:
-   - Rework: transition to DRAFT, address findings, resubmit
-   - Appeal: escalate to next-level approver with written rationale
-4. After 3 revision cycles without approval, artifact transitions to BLOCKED for architectural review
-
 ---
 
-## Part 7 — Dependency System
+## Part 6 — Dependency System
 
 ### Dependency Types
 
@@ -544,7 +542,7 @@ If plan's implementation sequence violates a dependency edge, the plan is non-co
 
 ---
 
-## Part 8 — Domain Adaptation
+## Part 7 — Domain Adaptation
 
 ### Invariant Core vs. Domain Profile
 
@@ -643,7 +641,7 @@ timeouts:
 ---
 
 
-## Part 9 — Worked Examples
+## Part 8 — Worked Examples
 
 Full worked examples are in **[examples.md](examples.md)**.
 
@@ -658,7 +656,7 @@ Each example includes conformance checks showing which rules pass, and the Featu
 
 ---
 
-## Part 10 — Traceability
+## Part 9 — Traceability
 
 ### The Traceability Chain
 
@@ -808,18 +806,15 @@ The spec is the Goldilocks artifact: stable enough to survive, granular enough t
 
 ## Appendix A — Quick Reference
 
-### State Transitions Cheat Sheet
+### Status Transitions Cheat Sheet
 
 | From | To | Trigger |
 |------|-----|---------|
-| DRAFT | PENDING_REVIEW | Submit for review |
-| PENDING_REVIEW | APPROVED | Gate approver signs |
-| PENDING_REVIEW | REVISION_REQUESTED | Gate approver requests changes |
-| REVISION_REQUESTED | DRAFT | Author begins rework |
+| DRAFT | APPROVED | Human approves after review cycle |
 | APPROVED | IN_PROGRESS | Work begins |
 | IN_PROGRESS | DONE | Verification passes |
 | IN_PROGRESS | FAILED | Verification fails |
-| FAILED | DRAFT | Rework plan identified |
+| FAILED | DRAFT | Rework path identified |
 | Any | BLOCKED | External blocker |
 | Any | ABANDONED | Intentional cancellation |
 | DONE | SUPERSEDED | Replaced by new version |
@@ -830,7 +825,7 @@ Before submitting for gate review:
 
 - [ ] All required fields present
 - [ ] ID format correct (F-NNN, S-NNN, P-NNN, T-NNN)
-- [ ] Status = PENDING_REVIEW
+- [ ] Status = DRAFT (review happens while in DRAFT)
 - [ ] Timestamps have timezone
 - [ ] Author field populated
 - [ ] For specs: AC count ≤ 10, HLD count ≤ 7
