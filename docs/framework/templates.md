@@ -32,6 +32,9 @@ domain: sw-dev                     # REQUIRED. Domain profile ID
 
 # === RELATIONSHIPS ===
 specs: []                          # Populated as specs are written. Derived, not manually edited.
+depends_on: []                     # OPTIONAL. Other features this depends on.
+#  - id: F-XXX
+#    type: temporal                # temporal | soft (features don't have interface deps)
 supersedes: null                   # F-XXX-vN if this replaces a prior version
 superseded_by: null                # F-YYY if this was replaced
 
@@ -275,6 +278,11 @@ completed: null                    # Set when status → DONE
 
 # === OWNERSHIP ===
 owner: agent:agy-impl-001          # REQUIRED. Exactly one owner
+
+# === DEPENDENCIES ===
+depends_on: []                     # OPTIONAL. Other tasks in same plan this depends on.
+#  - id: T-XXX
+#    type: temporal                # temporal | interface | soft (no external — use spec deps)
 ---
 
 ## Description

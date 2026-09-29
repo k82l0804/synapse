@@ -580,6 +580,21 @@ When a plan is rejected or fails and rework is needed:
 
 ## Part 6 — Dependency System
 
+### Which Artifacts Have Dependencies
+
+Not all artifact types declare dependencies in the same way:
+
+| Artifact | Has `depends_on`? | Can depend on | Example |
+|----------|-------------------|---------------|---------|
+| **Feature** | Yes | Other features | F-101 (simulation) depends on F-042 (registration) |
+| **Spec** | Yes | Other specs | S-013 (parser) depends on S-011 (registration) |
+| **Plan** | No — inherited from spec | (inherited) | If S-042 depends on S-041, then P-042 cannot start until S-041 is DONE |
+| **Task** | Yes | Other tasks within the same plan | T-002 (handlers) depends on T-001 (schema) |
+
+**Why plans don't have their own `depends_on`:** Plans are 1:1 with specs. If spec S-042 depends on S-041, then plan P-042 implicitly cannot start until S-041 is DONE (because the interface or temporal dependency hasn't been satisfied). Duplicating this in the plan would create two sources of truth. The spec's `depends_on` is the single source.
+
+**Tasks can only depend on tasks within the same plan.** Cross-plan task dependencies don't exist — if a task in P-042 needs something from P-041, that's a spec-level dependency (S-042 depends on S-041), not a task-level one.
+
 ### Dependency Types
 
 | Type | Meaning | Satisfaction Predicate | Invalidation Trigger |
@@ -589,9 +604,29 @@ When a plan is rejected or fails and rework is needed:
 | `external` | Relies on system outside this framework | External check passes | External system changes |
 | `soft` | Preferred but not required ordering | Upstream status = DONE OR timeout elapsed | Never |
 
+#### Which types apply where
+
+| Type | Feature → Feature | Spec → Spec | Task → Task |
+|------|-------------------|-------------|-------------|
+| `temporal` | ✓ | ✓ | ✓ |
+| `interface` | — | ✓ | ✓ |
+| `external` | — | ✓ | — |
+| `soft` | ✓ | ✓ | ✓ |
+
+Features use `temporal` or `soft` only — features don't have interfaces (specs do). Tasks don't use `external` — external dependencies are declared at the spec level and inherited by the plan/tasks.
+
 ### Dependency Declaration
 
-In spec `depends_on`:
+**In feature frontmatter:**
+
+```yaml
+# === RELATIONSHIPS ===
+depends_on:                          # OPTIONAL. Other features this depends on.
+  - id: F-042
+    type: temporal                   # Feature must be DONE before this feature starts
+```
+
+**In spec frontmatter:**
 
 ```yaml
 depends_on:
@@ -606,14 +641,24 @@ depends_on:
     timeout: 30s
 ```
 
+**In task frontmatter:**
+
+```yaml
+depends_on:                          # OPTIONAL. Other tasks in same plan.
+  - id: T-001
+    type: temporal                   # Schema must be created before handlers
+```
+
 ### Cycle Rejection
 
-Dependency cycles are rejected at SPEC GATE:
+Dependency cycles are rejected at gate review:
 
-1. Build directed graph of all specs with `depends_on` edges
+1. Build directed graph of all artifacts with `depends_on` edges
 2. Run topological sort
-3. If sort fails (cycle detected), reject all specs in the cycle
-4. Cycle must be broken by removing an edge (changing a dependency) before any spec in cycle can be approved
+3. If sort fails (cycle detected), reject all artifacts in the cycle
+4. Cycle must be broken by removing an edge (changing a dependency) before any artifact in cycle can be approved
+
+Feature-level cycles are checked at FEATURE GATE. Spec-level cycles at SPEC GATE. Task-level cycles are checked by the plan author before task creation.
 
 ### Cross-Feature Dependencies
 
