@@ -442,6 +442,16 @@ Despite the iterative review process, approval decisions are formal:
 
 **Author ≠ Approver** is an invariant. Agent reviewers inform the decision; the human (or delegated authority) makes it.
 
+### Gate Timeouts
+
+| Gate | Default Timeout | On Timeout |
+|------|-----------------|------------|
+| FEATURE_GATE | 7 days | Escalate to stakeholder list; after 14 days → BLOCKED |
+| SPEC_GATE | 3 days | Escalate to engineering lead; after 7 days → BLOCKED |
+| PLAN_GATE | 2 days | Escalate to tech lead; after 5 days → BLOCKED |
+
+BLOCKED artifacts require manual intervention. Timeouts are configurable per domain.
+
 ### Approval Records
 
 When a gate decision is made, an Approval Record is created:
@@ -449,6 +459,7 @@ When a gate decision is made, an Approval Record is created:
 - Approval records are immutable and linked to artifact version
 - If REJECTED, the approver must cite specific BLOCKING findings
 - After 3 revision cycles without approval, the artifact transitions to BLOCKED for architectural review
+- **Appeal path:** Author may escalate to next-level approver with written rationale if they disagree with a rejection
 
 ### Delegation
 
