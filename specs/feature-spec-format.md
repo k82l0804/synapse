@@ -30,18 +30,20 @@ Every spec file MUST begin with this frontmatter block:
 
 ```yaml
 ---
-id: F-XXX                          # REQUIRED — assigned from feature-registry.yaml
+id: S-XXX                          # REQUIRED — assigned from feature-registry.yaml
 name: short-kebab-case-name        # REQUIRED — matches registry entry
 status: draft | approved | done    # REQUIRED
 created: YYYY-MM-DD                # REQUIRED
 updated: YYYY-MM-DD                # REQUIRED — update on every edit
 author: human | research-to-features  # REQUIRED — who created this
-feature_registry_ref: F-XXX        # REQUIRED — must match id
+feature_registry_ref: S-XXX        # REQUIRED — must match id
 ---
 ```
 
 **Field rules:**
-- `id`: Immutable. Never changes after assignment. Format: `F-` + 3-digit zero-padded number.
+- `id`: Immutable. Never changes after assignment. Format: `[A-Z]-` + 3-digit zero-padded number.
+  The prefix letter is repo-configurable (default `F` for fox-code-cli; `S` for synapse).
+  Set `id_prefix` in `repos.yaml` for the repo. All specs in a repo use the same prefix.
 - `status`:
   - `draft` — written by agent, not yet human-reviewed
   - `approved` — human has reviewed and approved at spec gate
@@ -102,7 +104,9 @@ All four sub-fields are REQUIRED. A spec missing any of them fails schema valida
 
 **Rules:**
 - Numbered, starting at 1
-- Each task maps to exactly one task block in `tasks/current/phase-N.md`
+- Each **feature** maps to exactly one task block in `tasks/current/phase-N.md`.
+  That task block covers all the feature's HLTs (via `spec_task: HLT-1 through HLT-N`).
+  Per-HLT task blocks are not required and are typically too granular for pipeline tracking.
 - Tasks must be in dependency order (no forward references)
 - No code-level detail ("add a field to the struct") — logical units only
 - Maximum 8 tasks. If more are needed, split into two features.

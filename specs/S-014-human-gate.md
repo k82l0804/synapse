@@ -1,11 +1,12 @@
 ---
 id: S-014
 name: human-gate
-status: approved
+status: draft
 created: 2026-09-28
 updated: 2026-09-28
 author: research-to-features
 feature_registry_ref: S-014
+depends_on: [S-012]
 ---
 
 ## Overview
@@ -21,45 +22,53 @@ reject is forbidden — the `--note` flag is required.
 ## User, Trigger, Outcome
 
 - **User:** Developer who is the human approver in the pipeline
-- **Trigger:** Daemon enters `GATE_WAITING` state — written to `.synapse/run/WAITING`
+- **Trigger:** Daemon enters `GATE_WAITING` state — daemon writes `.synapse/run/GATE-{run-id}.md`
 - **Visible Outcome:**
-  - `synapse inbox` lists the waiting gate with run-id, product, gate type, and artifact path
-  - `synapse approve <run-id>` → pipeline advances to next step, WAITING file deleted
-  - `synapse reject <run-id> --note "..."` → feedback file written to `reviews/feedback/`,
-    specialist regenerates, new WAITING appears when artifact is ready
-  - `synapse reject <run-id>` without `--note` → exits non-zero with error "rejection requires --note"
+  - `synapse inbox` lists all pending gates across all products by scanning `.synapse/run/GATE-*.md`,
+    showing run-id, product name, gate type, and artifact path for each
+  - `synapse approve <run-id>` → pipeline advances to next step; daemon deletes the GATE file
+    and sets run status `waiting → running`
+  - `synapse reject <run-id> --note "..."` → feedback file written to `reviews/feedback/`;
+    daemon sets run status `waiting → running` so it re-dispatches the same step;
+    the specialist reads `reviews/feedback/` before generating output;
+    a new GATE file appears when the regenerated artifact is ready
+  - `synapse reject <run-id>` without `--note` → exits non-zero: "rejection requires --note"
+  - `synapse reject <run-id> --note ""` or `--note "   "` → exits non-zero: "note must not be empty"
 - **Non-Goal:** No desktop notifications — developer polls `synapse inbox` or sets up a
   filesystem watcher themselves. No GUI approval flow. No auto-approve.
+  Gate file naming: each gate is a separate `.synapse/run/GATE-{run-id}.md` file;
+  a single pipeline run has at most one GATE file at a time (serial mode invariant).
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `synapse inbox` lists all `GATE_WAITING` items across all products with run-id and artifact path
-- [ ] AC-2: `synapse approve <run-id>` advances the pipeline and deletes the `WAITING` file
-- [ ] AC-3: `synapse reject <run-id> --note "text"` writes a feedback file to `reviews/feedback/` and triggers regeneration
-- [ ] AC-4: `synapse reject <run-id>` without `--note` exits non-zero with a clear error (empty reject forbidden)
+- [ ] AC-1: `synapse inbox` lists all `.synapse/run/GATE-*.md` items across all products, showing run-id, product name, gate type, and artifact path
+- [ ] AC-2: `synapse approve <run-id>` deletes the GATE file and advances the pipeline (run status `waiting → running`)
+- [ ] AC-3: `synapse reject <run-id> --note "text"` writes a feedback file to `reviews/feedback/` and sets run status `waiting → running` for re-dispatch
+- [ ] AC-4: `synapse reject <run-id>` without `--note` exits non-zero with a clear error
 - [ ] AC-5: `synapse inbox --count` prints only the integer count of waiting gates (for scripting)
-- [ ] AC-6: Approving a non-existent or already-approved run-id exits non-zero with a clear error
+- [ ] AC-6: Approving or rejecting a non-existent or already-resolved run-id exits non-zero with a clear error
 
 ## High-Level Tasks
 
-1. HLT-1: Implement WAITING file writer — daemon writes `.synapse/run/WAITING` with gate metadata on `GATE_WAITING` state entry
-2. HLT-2: Implement `synapse inbox` — scans all WAITING files across products, formats output
-3. HLT-3: Implement `synapse approve` — validates run-id, transitions pipeline state, deletes WAITING file
-4. HLT-4: Implement `synapse reject` — validates `--note` required, writes feedback file to `reviews/feedback/`, triggers regeneration
+1. HLT-1: Implement GATE file writer — daemon writes `.synapse/run/GATE-{run-id}.md` with run-id, product, gate type, and artifact path on gate entry
+2. HLT-2: Implement `synapse inbox` — scans `.synapse/run/GATE-*.md` across all products, formats output with run-id, product, gate type, artifact path
+3. HLT-3: Implement `synapse approve` — validates run-id, deletes GATE file, sets run status `waiting → running`
+4. HLT-4: Implement `synapse reject` — validates `--note` (required, non-empty after trim), writes feedback file to `reviews/feedback/`, sets run status `waiting → running`
 5. HLT-5: Implement `synapse inbox --count` — prints integer count only
-6. HLT-6: Implement error handling — unknown run-id, already-approved, missing note → non-zero exit with message
+6. HLT-6: Implement error handling — unknown run-id, already-resolved, missing/empty note → non-zero exit with message
 
 ## Test Contract
 
 ### MUST
-- MUST: `synapse inbox` shows all waiting gates with run-id and artifact path
-- MUST: `synapse approve <run-id>` deletes the WAITING file and advances pipeline
-- MUST: `synapse reject <run-id> --note "..."` writes a feedback file with the note text
+- MUST: `synapse inbox` shows all waiting gates with run-id, product name, gate type, and artifact path
+- MUST: `synapse approve <run-id>` deletes the GATE-{run-id}.md file and advances pipeline
+- MUST: `synapse reject <run-id> --note "..."` writes a feedback file containing the note text
 - MUST: rejection without `--note` exits non-zero
+- MUST: rejection with empty or whitespace-only `--note` exits non-zero
 - MUST: `synapse inbox --count` output is parseable as an integer (no extra text)
 
 ### MUST NOT
-- MUST NOT: allow empty `--note` (e.g., `--note ""`) — must be non-empty
+- MUST NOT: allow empty or whitespace-only `--note` — `--note ""` and `--note "  "` both exit non-zero
 - MUST NOT: auto-approve any gate
-- MUST NOT: delete WAITING file on reject (gate stays open until specialist regenerates)
+- MUST NOT: delete GATE file on reject (gate stays open until daemon re-dispatches and new GATE appears)
 - MUST NOT: require network access or a running GUI

@@ -1,7 +1,7 @@
 ---
 id: S-011
 name: product-registration
-status: approved
+status: draft
 created: 2026-09-28
 updated: 2026-09-28
 author: research-to-features
@@ -31,11 +31,16 @@ product to `repos.yaml` and `synapse.db`. After registration the product appears
 ## Acceptance Criteria
 
 - [ ] AC-1: `synapse add <path>` succeeds for a valid repo path and prints the product name and status
-- [ ] AC-2: Product appears in `synapse products` output with `status: idle` after registration
-- [ ] AC-3: `repos.yaml` in the Synapse root contains a new entry for the registered product
-- [ ] AC-4: All required pipeline dirs are created in the target repo if they did not exist
-- [ ] AC-5: Running `synapse add` on an already-registered repo prints a warning and exits 0 (idempotent)
+- [ ] AC-2: Product row exists in `synapse.db` products table with `pipeline_status = 'idle'` and a matching entry exists in `repos.yaml`. (Note: `synapse products` list command is a future feature not in scope for this spec.)
+- [ ] AC-3: `repos.yaml` in the Synapse root contains a new entry for the registered product with name, path, and defaults
+- [ ] AC-4: All required pipeline dirs exist in the target repo after registration (created if absent):
+  `tasks/`, `tasks/current/`, `tasks/future/`, `tasks/done/`, `tasks/deferred/`,
+  `plans/`, `plans/current/`, `plans/done/`,
+  `specs/`, `reviews/`, `reviews/spec/`, `reviews/plan/`, `reviews/code/`,
+  `reviews/triage/`, `reviews/feedback/`
+- [ ] AC-5: Running `synapse add` on an already-registered path exits 0 with a warning (idempotent); identity check uses absolute resolved path
 - [ ] AC-6: Running `synapse add` on a path that doesn't exist exits non-zero with a clear error message
+- [ ] AC-7: Running `synapse add` on a path that exists but is not a git repo exits non-zero with a clear error message
 
 ## High-Level Tasks
 
@@ -55,7 +60,7 @@ product to `repos.yaml` and `synapse.db`. After registration the product appears
 - MUST: `synapse add` on an already-registered path is idempotent (exits 0, prints warning)
 
 ### MUST NOT
-- MUST NOT: `synapse add` modify any file inside the registered repo except creating dirs
+- MUST NOT: modify any pre-existing file inside the registered repo; creating empty `.gitkeep` markers in newly-created dirs is permitted
 - MUST NOT: start any pipeline step or agent subprocess
 - MUST NOT: require `AGENTS.md` to exist (warn only)
 - MUST NOT: exit non-zero when dirs already exist

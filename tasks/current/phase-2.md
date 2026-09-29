@@ -38,7 +38,7 @@ rationale: |
   - AC-1: Valid PIPELINE_SIGNAL on last line → parsed, stored in DB
   - AC-2: Valid TESTER_SIGNAL on last line → parsed, stored in DB
   - AC-3: Absent signal → run status TASK_FAILED, reason SIGNAL_ABSENT
-  - AC-4: Malformed signal → TASK_FAILED, reason SCHEMA_VIOLATION: {line}
+  - AC-4: Malformed signal → TASK_FAILED, reason SCHEMA_VIOLATION: signal present but malformed: {line}
   - AC-5: Mid-document signal (not last line) → treated as absent
   - AC-6: All fields correctly extracted for both signal types
 **Test contract:**
@@ -104,18 +104,18 @@ spec: specs/S-014-human-gate.md
 spec_task: HLT-1 through HLT-6
 **Acceptance criteria:**
   - AC-1: `synapse inbox` lists all GATE_WAITING items with run-id and artifact path
-  - AC-2: `synapse approve <run-id>` advances pipeline, deletes WAITING file
+  - AC-2: `synapse approve <run-id>` advances pipeline, deletes GATE-{run-id}.md file
   - AC-3: `synapse reject <run-id> --note "..."` writes feedback file, triggers regeneration
   - AC-4: `synapse reject` without --note exits non-zero
   - AC-5: `synapse inbox --count` prints integer only
   - AC-6: Unknown/already-approved run-id exits non-zero
 **Test contract:**
-  - MUST: approve deletes WAITING file
+  - MUST: approve deletes GATE-{run-id}.md file
   - MUST: reject writes feedback file with note text
   - MUST: empty note exits non-zero
   - MUST NOT: allow empty --note
   - MUST NOT: auto-approve any gate
-  - MUST NOT: reject delete WAITING file (gate stays open until regenerated)
+  - MUST NOT: reject delete GATE-{run-id}.md file (gate stays open until regenerated)
 **Priority:** HIGH
 
 ---
