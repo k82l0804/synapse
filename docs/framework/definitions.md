@@ -1,10 +1,45 @@
 # Synapse Framework — Definitions Handbook
 
-> **Audience:** Human operators making gate decisions, contributors onboarding to the Synapse workflow, and anyone who needs to understand *why* the process works the way it does. AI agents consume the [templates](templates.md) and conformance schema (Part 5) directly; a formal agent reference card is a planned future companion.
+> **Audience:** Human operators making gate decisions, contributors onboarding to the Synapse workflow, and anyone who needs to understand *why* the process works the way it does. AI agents: skip to [Appendix C — Agent Quick Reference](#appendix-c--agent-quick-reference) for mechanical rules, or use [templates.md](templates.md) and Part 5 (Conformance Schema) directly.
 
 ## What This Framework Does
 
 This framework defines how work moves from an idea to verified code. It gives every artifact (feature, spec, plan, task) a standard structure, a lifecycle with review gates, and a traceability chain that connects stakeholder intent to tested implementation.
+
+---
+
+## Table of Contents
+
+**Getting Started**
+- [The Cast of Characters](#the-cast-of-characters) — the 5 artifact types at a glance
+- [The Workflow in 30 Seconds](#the-workflow-in-30-seconds) — the pipeline diagram
+- [How It Actually Works](#how-it-actually-works-a-walkthrough) — a narrative walkthrough
+
+**The Handbook**
+1. [Part 1 — Definitions](#part-1--definitions) — Feature, Spec, AC, Plan, Task, Identification System
+2. [Part 2 — Artifact Lifecycle & Review](#part-2--artifact-lifecycle--review) — Statuses, review cycle, gates, delegation
+3. [Part 3 — Design Rules](#part-3--design-rules) — Sizing, layer principle, task scope, non-feature work
+4. [Part 4 — Templates](#part-4--templates) → summary; full templates in [templates.md](templates.md)
+5. [Part 5 — Conformance Schema](#part-5--conformance-schema) — Validation rules, field constraints
+6. [Part 6 — Dependency System](#part-6--dependency-system) — Scope, types, cycles, ordering
+7. [Part 7 — Traceability](#part-7--traceability) — Chain, coverage matrices, @spec markers, completion predicates
+8. [Part 8 — Worked Examples](#part-8--worked-examples) → summary; full examples in [examples.md](examples.md)
+
+**Appendices**
+- [Appendix A — Quick Reference](#appendix-a--quick-reference) — Cheat sheets, checklists, ID allocation
+- [Appendix B — Migration from Draft v1](#appendix-b--migration-from-draft-v1)
+- [Appendix C — Agent Quick Reference](#appendix-c--agent-quick-reference) — Mechanical rules for AI agents
+
+**Related Files**
+| File | Contents |
+|------|----------|
+| [templates.md](templates.md) | Full YAML templates for Feature, Spec, Plan, Task, and Approval Record |
+| [examples.md](examples.md) | 3 worked examples (SW Dev, Nav Sim, Defect Fix) + negative examples |
+| [domain-adaptation.md](domain-adaptation.md) | Domain-agnostic design: what's invariant vs customizable (design intent only) |
+
+---
+
+## Getting Started
 
 ### The Cast of Characters
 
@@ -57,28 +92,6 @@ Imagine you want to add product registration to Synapse. Here's what happens:
 **7. Verification.** When all tasks are done, the plan runs its verification: do all acceptance criteria pass? Then the feature runs its **acceptance tests** — independent end-to-end tests that prove the stakeholder's capability actually works, not just that the code was written correctly.
 
 **The key insight:** Each layer adds detail but never contradicts the layer above. The feature says "register a repo." The spec says "create a `repos.yaml` entry." The plan says "use YAML.stringify with schema validation." Each is a faithful refinement of the one above.
-
----
-
-## Table of Contents
-
-1. [Definitions](#part-1--definitions) — Feature, Spec, AC, Plan, Task, Identification System
-2. [Artifact Lifecycle & Review](#part-2--artifact-lifecycle--review) — Statuses, review cycle, gates, delegation
-3. [Design Rules](#part-3--design-rules) — Sizing, layer principle, task scope, non-feature work
-4. [Templates](#part-4--templates) → summary; full templates in [templates.md](templates.md)
-5. [Conformance Schema](#part-5--conformance-schema) — Validation rules, field constraints
-6. [Dependency System](#part-6--dependency-system) — Scope, types, cycles, ordering
-7. [Traceability](#part-7--traceability) — Chain, coverage matrices, @spec markers, completion predicates
-8. [Worked Examples](#part-8--worked-examples) → summary; full examples in [examples.md](examples.md)
-
-### Companion Files
-
-| File | Contents |
-|------|----------|
-| **definitions.md** (this file) | Definitions, lifecycle, design rules, conformance, dependencies, traceability |
-| [templates.md](templates.md) | Full YAML templates for Feature, Spec, Plan, Task, and Approval Record |
-| [examples.md](examples.md) | 3 worked examples (SW Dev, Nav Sim, Defect Fix) + negative examples |
-| [domain-adaptation.md](domain-adaptation.md) | Domain-agnostic design: what's invariant vs customizable (design intent only) |
 
 ---
 
