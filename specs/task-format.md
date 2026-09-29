@@ -8,8 +8,8 @@
 
 ## 1. What a Task Is
 
-A task is a discrete unit of work that maps directly to a High-Level Task (HLT)
-in an approved feature spec, or is a standalone chore/bugfix/refactor.
+A task is a unit of work that maps to one **feature** (covering all that feature's HLTs) in an
+approved feature spec, or is a standalone chore/bugfix/refactor.
 
 ```
 Spec.HLT-N  →  Task block in tasks/current/phase-N.md
