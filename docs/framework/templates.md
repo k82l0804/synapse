@@ -2,13 +2,13 @@
 
 > **Reference for:** [Specification](specification.md) §11
 > **Templates:** Spec, Plan, Task, Approval Record
-> **See also:** [Pipeline Architecture](pipeline-architecture.md) for the BRIEF.md template
+> **See also:** [Pipeline Architecture](pipeline-architecture.md) for the change.md template
 
 ---
 
 ## Templates
 
-> **Note:** The BRIEF.md template is in [Pipeline Architecture](pipeline-architecture.md#briefmd-template) because it is the pipeline's input artifact, not a framework artifact with an ID.
+> **Note:** The change.md template is in [Pipeline Architecture](pipeline-architecture.md#the-changemd-template) because it is the pipeline's input artifact.
 
 ---
 
@@ -33,7 +33,7 @@ author: agent:agy-planner-001      # REQUIRED. Human or agent identity
 domain: sw-dev                     # REQUIRED. Domain profile ID
 
 # === RELATIONSHIPS ===
-feature: F-XXX                     # REQUIRED for feature work. NONE for non-feature work.
+# Change is implicit from folder location (this spec lives in C-NNN/specs/)
 depends_on: []                     # Spec IDs with dependency type. See dependency system.
 supersedes: null
 superseded_by: null
@@ -129,7 +129,7 @@ status_changed: 2026-09-29T10:30:00Z
 
 # === OWNERSHIP ===
 author: agent:agy-planner-001
-feature: F-XXX                     # Derived from spec
+# Change is implicit from folder location
 
 # === RELATIONSHIPS ===
 supersedes: null                   # P-YYY if this is a replan
@@ -247,7 +247,7 @@ depends_on: []                     # OPTIONAL. Other tasks in same plan this dep
 ---
 artifact: S-XXX                    # The artifact being approved
 artifact_version: 1                # Which version
-gate: SPEC_GATE                    # Enum: FEATURE_GATE | SPEC_GATE | PLAN_GATE | SPIKE_GATE
+approval_point: SPEC_APPROVAL      # Enum: CHANGE_APPROVAL | SPEC_APPROVAL | PLAN_APPROVAL | ACCEPTANCE
 decision: APPROVED                 # Enum: APPROVED | REVISION_REQUESTED | REJECTED
 timestamp: 2026-09-29T10:30:00Z    # ISO 8601 with timezone
 approver: jane.smith               # Identity (distinct from author)

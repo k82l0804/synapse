@@ -13,7 +13,7 @@ You are one of seven roles in a pipeline that processes software changes. The pi
 **You do NOT:**
 - Approve artifacts (only the human does)
 - Decide when to stop iterating (the triage rubric decides, or the human decides)
-- Skip gates (auto-advance is illegal at Brief Gate, Spec Gate, and Acceptance Gate)
+- Skip gates (auto-advance is illegal at Change approval, Spec approval, and Acceptance)
 - Edit files during a review (reviewers are read-only)
 
 **You DO:**
@@ -27,32 +27,31 @@ You are one of seven roles in a pipeline that processes software changes. The pi
 
 ## 2. Artifact Creation Procedures
 
-### Create Brief
+### Create Change
 
 ```
-1. Create changes/design/{slug}/BRIEF.md
+1. Create future/C-NNN/change.md
 2. Set kind: feature | fix | refactor | chore | spike
 3. Set ticket: {external tracker ID} (if applicable)
 4. Set status: draft
 5. Write: Intent (one sentence), Non-Goals, Done-When (executable tests), Blast Radius
 6. Write kind-specific fields (see Pipeline Architecture — Kind System)
-7. Add sources: documents, URLs, conversations that informed the brief
+7. Add sources: documents, URLs, conversations that informed the change
 8. Submit for Review Cycle (RC)
 ```
 
 ### Create Spec
 
 ```
-1. Assign S-NNN (monotonic within this pipeline instance, never reused)
+1. Assign S-NNN (monotonic within this change folder, never reused)
 2. Set status = DRAFT
-3. Set feature = F-NNN (or NONE for non-feature work; set work_type accordingly)
-4. Populate: id, version, name, author
+3. Populate: id, version, name, author
 5. Write: Overview, Trigger Model, Acceptance Criteria (≤ 10)
 6. Write: High-Level Deliverables (≤ 7), Validation Contract (MUSTs/MUST NOTs)
 7. Write: Coverage Matrix (every AC → MUST → verification method)
 8. Set depends_on (other specs this depends on, with type)
-9. Validate: every AC traces to a brief in-scope item or done-when criterion
-10. Submit for RC → SPEC_GATE (human approves)
+9. Validate: every AC traces to a change in-scope item or done-when criterion
+10. Submit for RC → Spec approval (human approves)
 ```
 
 ### Create Plan
@@ -66,7 +65,7 @@ You are one of seven roles in a pipeline that processes software changes. The pi
 6. Write: Implementation Sequence, Verification Plan (every AC has a method)
 7. Write: Risks & Mitigations, Open Questions
 8. Validate: Open Questions must be EMPTY before submitting for gate
-9. Submit for RC → PLAN_GATE
+9. Submit for RC → PLAN_APPROVAL
 ```
 
 ### Create Task
@@ -85,7 +84,7 @@ You are one of seven roles in a pipeline that processes software changes. The pi
 ```
 1. Assign AR-NNN (monotonic, never reused)
 2. Set artifact = {artifact ID}, artifact_version = {version at time of decision}
-3. Set gate = BRIEF_GATE | SPEC_GATE | PLAN_GATE | ACCEPTANCE_GATE
+3. Set gate = CHANGE_APPROVAL | SPEC_APPROVAL | PLAN_APPROVAL | ACCEPTANCE
 4. Set decision = APPROVED | REVISION_REQUESTED | REJECTED
 5. Set timestamp, approver (approver ≠ artifact author)
 6. Write: Findings Summary (severity counts), Decision Rationale, Conditions
@@ -101,7 +100,7 @@ When assigned as a reviewer, you produce a findings document. You do not modify 
 
 ```
 REVIEW artifact:
-  1. Read the artifact and its parent (brief for specs, spec for plans)
+  1. Read the artifact and its parent (change.md for specs, spec for plans)
   2. Check against conformance schema (Specification §5)
   3. Classify each issue:
      BLOCKING  — violates a MUST, missing required field, contradicts parent layer
@@ -264,7 +263,7 @@ IMPLEMENT task:
 These are mechanical checks. Apply them before submitting any artifact.
 
 ```
-REJECT brief IF:
+REJECT change.md IF:
   kind is missing
   done-when is missing or contains only prose (no executable test)
 
@@ -273,7 +272,7 @@ REJECT spec IF:
   hld_count > 7
   missing: id | version | name | feature | status | author
   missing: acceptance_criteria | coverage_matrix
-  any AC without verification trace to brief
+  any AC without verification trace to change
   depends_on contains cycle
   feature field is empty AND work_type not in [fix, refactor, chore, spike]
 
@@ -343,7 +342,7 @@ WHEN writing or reviewing a spec:
 
 WHEN writing or reviewing a plan:
   ASK: Does the implementation require mandatory wait points between HLDs?
-  IF yes THEN spec is not atomic → report in Open Questions → blocks PLAN_GATE
+  IF yes THEN spec is not atomic → report in Open Questions → blocks PLAN_APPROVAL
 
 WHEN decomposing plan into tasks:
   ASK: Can one agent complete this task without context overflow?
@@ -360,13 +359,13 @@ Run this audit to verify the traceability chain is intact.
 
 ```
 FOR each change in done/:
-  1. Read BRIEF.md — extract in-scope items and done-when tests
+  1. Read change.md — extract in-scope items and done-when tests
   2. List all specs in specs/
   3. For each spec:
-     a. Check every AC traces to a brief in-scope item or done-when
+     a. Check every AC traces to a change in-scope item or done-when
      b. Check @spec S-NNN exists in the codebase (grep -rn "@spec S-NNN" ./src/)
      c. Check all ACs have passing verification
-  4. Run done-when tests from BRIEF.md
+  4. Run done-when tests from change.md
   5. Result: PASS if all checks green, FAIL with specific gaps listed
 ```
 
@@ -387,7 +386,7 @@ FOR each @spec marker in codebase:
 
 | Artifact | Location within change folder | Naming |
 |----------|------------------------------|--------|
-| Brief | `BRIEF.md` | Always `BRIEF.md` |
+| Change | `change.md` | Always `change.md` |
 | Specs | `specs/S-NNN-kebab-name.md` | Stable after creation |
 | Plans | `plans/P-NNN.md` | Stable after creation |
 | Tasks | `tasks.md` | Consolidated checklist |

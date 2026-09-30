@@ -13,12 +13,12 @@ This specification defines the artifact model, state machines, conformance rules
 It covers:
 - Artifact types and their schemas (§2)
 - Identification system (§3)
-- Status state machines (§4)
+- Stage completion model (§4)
 - Required fields and conformance (§5)
 - Design rules: layer principle, sizing, work types (§6)
 - Dependency system (§7)
 - Traceability chain (§8)
-- Gate definitions (§9)
+- Approval points (§9)
 - Split and replan protocols (§10)
 - Templates (§11)
 
@@ -28,17 +28,15 @@ It does not cover pipeline mechanics (stages, the review cycle, roles/tiers) —
 
 ## 2. Artifact Definitions
 
-### Change
+### Change (`change.md`)
 
-The unit of work that flows through the pipeline. A change has a `kind` — `feature`, `fix`, `refactor`, `chore`, or `spike` — and a slug (kebab-case name). The change is identified by its folder name, not by a numeric ID.
+The unit of work that flows through the pipeline. A change has a `kind` — `feature`, `fix`, `refactor`, `chore`, or `spike`. It is identified by its folder name (`C-NNN`).
 
-A change enters the pipeline as a folder in `design/` containing `BRIEF.md`. As it progresses through `plan/`, `build/`, and `done/`, artifacts accumulate inside the folder. The folder is the record.
+A change enters the pipeline as a folder in `future/` containing `change.md`. When the developer is ready, the folder moves to `current/`. Artifacts (specs, plans, tasks) accumulate inside the folder as stages complete. Each stage is marked done by a `done.md` file. When the change is complete, the folder moves to `done/`.
 
-### Brief (`BRIEF.md`)
+`change.md` captures intent, non-goals, done-when criteria, blast radius, and kind-specific fields. It is a product artifact — the human is the author of record, even when an agent drafts it.
 
-The human-authored input artifact in `design/`. Captures intent, non-goals, done-when criteria, blast radius, and kind-specific fields. The brief is a product artifact — the human is the author of record, even when an agent drafts it.
-
-A brief is not a spec. It says *what you want* and *what you refuse to build*. It does not say *what the system must do* — that's the spec's job.
+A change is not a spec. It says *what you want* and *what you refuse to build*. It does not say *what the system must do* — that's the spec's job.
 
 ### Spec (Specification)
 
@@ -82,12 +80,11 @@ An immutable record of a gate decision. Created when a human approves, rejects, 
 
 | Artifact | Prefix | Format | Sequence |
 |----------|--------|--------|----------|
-| Change | — | Slug (kebab-case folder name) | — |
-| Brief | — | `BRIEF.md` (one per change) | — |
-| Spec | `S-` | `S-NNN` | Monotonic global |
-| Plan | `P-` | `P-NNN` | Monotonic global |
+| Change | `C-` | `C-NNN` (folder name) | Monotonic per pipeline |
+| Spec | `S-` | `S-NNN` | Monotonic per change |
+| Plan | `P-` | `P-NNN` | Monotonic per change |
 | Task | `T-` | `T-NNN` | Monotonic per plan |
-| Approval Record | `AR-` | `AR-NNN` | Monotonic global |
+| Stage completion | — | `done.md` | One per stage directory |
 
 ### Rules
 
@@ -106,86 +103,73 @@ Flat IDs (`S-042` with `feature: F-042` in frontmatter) survive splits, replans,
 Artifacts reference each other through frontmatter fields, not through ID structure:
 
 ```
-Change (folder: auth-login/)
-  └── Brief: BRIEF.md
+Change C-042/
+  └── change.md
 
-Spec S-042
-  ├── feature: F-042          ← upward link (or NONE for non-feature work)
-  └── depends_on: [S-041]     ← lateral link
+Spec S-01 (inside C-042/specs/)
+  ├── change: C-042            ← upward link (implicit from folder)
+  └── depends_on: []           ← lateral link
 
-Plan P-042
-  ├── spec: S-042              ← upward link (1:1)
+Plan P-01 (inside C-042/plans/)
+  ├── spec: S-01               ← upward link (1:1)
   └── spec_version: 1          ← version pin
 
-Task T-003
-  ├── plan: P-042              ← upward link
+Task T-01 (inside C-042/tasks/)
+  ├── plan: P-01               ← upward link
   └── hld: HLD-2               ← which deliverable
 ```
 
 ---
 
-## 4. Status State Machine
+## 4. Stage Completion Model
 
-### Statuses
+Synapse uses the filesystem as the state machine. Instead of YAML status fields with complex transition rules, stage completion is tracked by the existence of `done.md` files.
 
-| Status | Meaning | Applies to |
-|--------|---------|------------|
-| `NOT_STARTED` | Created but no work begun | Task |
-| `DRAFT` | Being written or revised (includes all review iterations) | Spec, Plan |
-| `APPROVED` | Passed gate review | Spec, Plan |
-| `IN_PROGRESS` | Active work underway | Plan, Task |
-| `BLOCKED` | Cannot proceed — external dependency or unresolved issue | Spec, Plan, Task |
-| `DONE` | All acceptance criteria verified | Spec, Plan, Task |
-| `FAILED` | Verification failed or implementation proved impossible | Plan, Task |
-| `ABANDONED` | Intentionally stopped (terminal) | Spec, Plan, Task |
-| `SUPERSEDED` | Replaced by a newer version (terminal) | Spec, Plan |
-
-### Transitions
+### The State Machine
 
 ```
-Spec/Plan:
-  DRAFT ──(gate approval)──→ APPROVED ──→ IN_PROGRESS ──→ DONE
-                                              │
-                                              ▼
-                                           BLOCKED ──→ DRAFT (rework)
-                                              │           or FAILED
-                                              │           or ABANDONED
-                                              ▼
-                                           FAILED ──→ DRAFT (rework)
-  Any ──→ ABANDONED (intentional cancellation)
-  DONE ──→ SUPERSEDED (replaced by newer version)
-  BLOCKED ──→ IN_PROGRESS (blocker resolved)
-
-Task:
-  NOT_STARTED ──→ IN_PROGRESS ──→ DONE
-                       │
-                       ▼
-                    BLOCKED ──→ IN_PROGRESS (blocker resolved)
-                       │
-                       ▼
-                    FAILED ──→ NOT_STARTED (retry)
-  Any ──→ ABANDONED
+Stage not started:    directory does not exist
+Stage in progress:    directory exists, done.md does not
+Stage complete:       done.md exists in the directory
+Change complete:      done.md exists at the change folder root
 ```
 
-### Key Rules
+| Location | What it means |
+|----------|---------------|
+| `C-042/specs/done.md` | Specs approved by human |
+| `C-042/plans/done.md` | Plans approved (human or auto) |
+| `C-042/tasks/done.md` | All tasks verified (auto) |
+| `C-042/done.md` | Change accepted by human, ready for `done/` |
 
-- **No PENDING_REVIEW status.** Review is part of drafting. The artifact stays in `DRAFT` through all review iterations.
-- **Tasks skip DRAFT/APPROVED.** Tasks are operational, not gated. They start at `NOT_STARTED`.
-- **Specs skip IN_PROGRESS/FAILED.** Specs are contracts, not work. They go from `APPROVED` to `DONE` when all ACs pass.
-- **BLOCKED → IN_PROGRESS.** When a blocker is resolved, work resumes without returning to DRAFT.
-- **Post-rejection.** If a gate reviewer rejects, the artifact returns to `DRAFT` for revision. After 3 revision cycles without approval, the artifact transitions to `BLOCKED` for architectural review.
+### `done.md` Contents
+
+```markdown
+Approved by: jane.smith
+Date: 2026-09-30T17:25:00Z
+RC iterations: 2
+Notes: Good decomposition. Proceed.
+```
+
+### Key Properties
+
+- **File existence is the state.** No YAML status fields to maintain or synchronize.
+- **Rollback is deletion.** Delete `specs/done.md` to revert to "specs not approved." The specs themselves remain for revision.
+- **Resumption is free.** Check which `done.md` files exist, pick up at the first missing one.
+- **Audit trail is built-in.** The approval record is inside the change folder, right next to what was approved.
 
 ---
 
 ## 5. Required Fields and Conformance
 
-### Brief Required Fields
+### Change Required Fields (`change.md`)
 
 | Field | Type | Constraints |
 |-------|------|-------------|
 | kind | enum | `feature \| fix \| refactor \| chore \| spike` |
 | ticket | string | Optional. External tracker ID (e.g., `JIRA-123`). Links change to coordination layer. |
-| status | enum | `draft \| review \| approved` |
+| status | enum | `draft \| approved` |
+| depends_on | list | C-NNN IDs that must be in `done/` before this starts |
+| priority | enum | `P0 \| P1 \| P2 \| P3` |
 | Intent | section | One sentence |
 | Non-Goals | section | Present (may be empty with rationale) |
 | Done-When | section | At least one executable test (not prose) |
@@ -229,28 +213,23 @@ Task:
 | status | enum | Must start as `NOT_STARTED` |
 | owner | string | Non-empty (`agent:xxx` or `human:xxx`) |
 
-### Approval Record Required Fields
+### Stage Completion (`done.md`)
 
-| Field | Type | Constraints |
-|-------|------|-------------|
-| id | string | Matches `^AR-[0-9]{3,}$` |
-| artifact | string | Valid artifact ID |
-| artifact_version | integer | Version at time of decision |
-| gate | enum | `BRIEF_GATE \| SPEC_GATE \| PLAN_GATE \| ACCEPTANCE_GATE` |
-| decision | enum | `APPROVED \| REVISION_REQUESTED \| REJECTED` |
-| timestamp | datetime | ISO 8601 with timezone |
-| approver | string | Non-empty, ≠ artifact author |
+`done.md` files serve as both the approval record and the state marker. They are not templated — they contain freeform text with at minimum:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| Approved by | Yes (for human-gated stages) | Identity of approver |
+| Date | Yes | ISO 8601 |
+| Notes | Optional | Rationale, conditions |
 
 ### Invariants
 
 1. **ID immutability.** Once assigned, `id` never changes.
 2. **Version monotonicity.** Version only increments, never decrements.
-3. **Temporal ordering.** `status_changed ≥ updated ≥ created`.
-4. **Author ≠ Approver.** For any approval record, `approver ≠ author`.
-5. **Supersession chain.** If `supersedes: X`, then X must have `superseded_by: this`.
-6. **Coverage completeness.** Every AC maps to ≥1 MUST; every MUST maps to ≥1 verification method.
-7. **Scope traceability.** Every spec AC cites a brief in-scope item, done-when criterion, or (for non-feature work) an `authorizing_ref`.
-8. **Dependency acyclicity.** The `depends_on` graph has no cycles.
+3. **Coverage completeness.** Every AC maps to ≥1 MUST; every MUST maps to ≥1 verification method.
+4. **Scope traceability.** Every spec AC cites a change in-scope item, done-when criterion, or (for non-feature work) an `authorizing_ref`.
+5. **Dependency acyclicity.** The `depends_on` graph has no cycles.
 
 ### Reject Conditions
 
@@ -420,32 +399,23 @@ A change cannot be marked done if any spec is IN_PROGRESS, BLOCKED, or FAILED, o
 
 ---
 
-## 9. Gate Definitions
+## 9. Approval Points
 
-| Gate | Artifact | Approver constraint | What it freezes |
-|------|----------|-------------------|-----------------|
-| `BRIEF_GATE` | Brief | Human (always) | Scope, non-goals, done-when |
-| `SPEC_GATE` | Spec set | Human (always) | Architecture, seams, ACs |
-| `PLAN_GATE` | Plan | Human or delegated reviewer | Implementation approach |
-| `ACCEPTANCE_GATE` | Change | Human (always) | The result is the thing you meant |
+Approval points are where a human creates a `done.md` file, freezing that stage.
+
+| Approval Point | What gets `done.md` | Who creates it | What it freezes |
+|---------------|---------------------|----------------|----------------|
+| **Change approval** | `change.md` status → approved | Human (always) | Scope, non-goals, done-when |
+| **Spec approval** | `specs/done.md` | Human (always) | Architecture, seams, ACs |
+| **Plan approval** | `plans/done.md` | Human or daemon (configurable) | Implementation approach |
+| **Acceptance** | `done.md` (top-level) | Human (always) | The result is the thing you meant |
 
 ### Rules
 
-- **Auto-advance is illegal** at BRIEF_GATE, SPEC_GATE, and ACCEPTANCE_GATE.
-- **Author ≠ Approver** for all gates.
-- **Spec Gate reviews the set**, not individual specs. The human approves the decomposition as a whole.
-- **After 3 revision cycles** without approval → artifact transitions to `BLOCKED` for architectural review.
-
-### Timeouts
-
-| Gate | Default | On timeout |
-|------|---------|------------|
-| BRIEF_GATE | 7 days | Escalate; after 14 days → BLOCKED |
-| SPEC_GATE | 3 days | Escalate; after 7 days → BLOCKED |
-| PLAN_GATE | 2 days | Escalate; after 5 days → BLOCKED |
-| ACCEPTANCE_GATE | 7 days | Escalate; after 14 days → BLOCKED |
-
-Timeouts are configurable.
+- **Auto-advance is illegal** at Change approval, Spec approval, and Acceptance.
+- **Spec approval reviews the set**, not individual specs. The human approves the decomposition as a whole.
+- **Rollback:** Delete a `done.md` to revert to that stage. The daemon resumes waiting.
+- **After 3 revision cycles** without approval → pipeline halts for human review.
 
 ---
 
