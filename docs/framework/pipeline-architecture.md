@@ -1,602 +1,303 @@
-# Synapse Pipeline Architecture — Conceptual Foundation
+# Synapse Pipeline Architecture
 
-> **Date:** 2026-09-29 (v3)  
-> **Status:** Working draft — incorporates Plod Opus-5 review findings  
-> **Context:** Derived from analyzing how fox-code-cli was actually built (Phases 1–2H, 40+ completed plans). Refined with external batch-processing review and Plod architecture review (2026-09-29T20-18).  
-> **Supersedes:** This document supersedes the pipeline model described in `specs/S-011` through `specs/S-015` and `specs/pipeline-signal-protocol.md`. Those specs described a flat-directory, 15-step, product-scoped pipeline with PLAN GATE and signal protocol. This document replaces that model with feature-scoped directories, a double-buffer pipeline, query-driven scheduling, and bin-based coordination. Specs S-011–S-015 are hereby marked **superseded**. Any work in `tasks/current/` that references those specs should be re-scoped to implement this architecture instead.
-
----
-
-## The Double-Buffer Pipeline
-
-Synapse is a single pipeline with two async stages connected by a queue — like a graphics rendering pipeline where the CPU prepares the next frame while the GPU renders the current one.
-
-```
-┌─────────────────────┐     ┌──────────────┐     ┌──────────────────────┐
-│   DESIGN STAGE      │     │    QUEUE      │     │   EXECUTION STAGE    │
-│   (human-driven)    │────▶│  (the swap    │────▶│   (agent-driven)     │
-│                     │     │   buffer)     │     │                      │
-│  Research           │     │              │     │  Create plans         │
-│    → Features       │     │  Approved    │     │    → Implement        │
-│      → Specs        │     │  feature     │     │      → Test           │
-│        → Approve    │     │  spec sets   │     │        → Review       │
-│          → Next...  │     │              │     │          → Done       │
-│                     │     │              │     │                      │
-│                     │◀────│──────────────│◀────│                      │
-│  Handle escalations │     │  Escalation  │     │  Escalate failures   │
-└─────────────────────┘     │  backflow    │     └──────────────────────┘
-                            └──────────────┘
-```
-
-**Key properties:**
-
-1. **Decoupled.** The human doesn't wait for agents to finish before designing the next feature. Agents don't wait for the human to approve before processing the next item in the queue. Both stages run at their own pace.
-
-2. **No tearing.** Artifacts in the execution stage are **frozen** — the human cannot edit specs that are currently being executed against. If the execution stage finds a spec problem, it escalates the feature back to the design stage, where mutation is safe. (See §Bin System.)
-
-3. **Throughput-limited by the slower stage.** If the human designs faster than agents can build, the queue grows. If agents build faster than the human designs, the queue empties and agents idle. The system self-balances.
-
-4. **Artifact-driven.** The queue IS the artifacts. An approved feature sitting in the `current` bin is a queue entry. No separate job queue, no hand-edited manifest — the filesystem is the buffer.
-
-### Consistency with Proven Practice
-
-The execution stage faithfully reflects how fox-code-cli was built: plans as the substantive artifact, todos as scratch, green tests = done, phase-based batching. The design stage (human-approves-spec-sets-then-agents-run) is **new** — fox-code-cli had no pre-approved specs; `feature-registry.yaml` was post-hoc coverage. This model has earned confidence for execution but not yet for design. This document states that plainly so confidence is calibrated.
+> **Date:** 2026-09-29 (v5)  
+> **Status:** Working draft  
+> **Supersedes:** This document supersedes `specs/S-011` through `specs/S-015` and `specs/pipeline-signal-protocol.md`. Those specs are hereby marked **superseded**.
 
 ---
 
-## Three Artifacts, Not Four
+## Overview
 
-| Artifact | Purpose | Who creates | Who approves |
-|----------|---------|-------------|-------------|
-| **Feature** | "What to build" — scope, success metrics, in-scope items, acceptance tests | Human (with agent research assistance) | Human |
-| **Spec** | "The contract" — acceptance criteria, MUSTs, verification | Agent drafts, human reviews | Human (batch per feature) |
-| **Plan** | "How to build it" — file changes, architecture, edge cases, tests | Agent creates from approved spec | Agent (peer review, different model) |
+Synapse processes features one at a time through a three-bin pipeline. The pipeline runs fully autonomous — no human gates — until the triage agent determines it cannot proceed, at which point the pipeline halts for human intervention.
 
-### What Happened to Tasks?
+```
+  ┌──────────┐          ┌──────────┐          ┌──────────┐
+  │ future/  │ ──next─▶ │ current/ │ ──done─▶ │  done/   │
+  │ (queue)  │          │ (1 feat) │          │ (archive)│
+  └──────────┘          └──────────┘          └──────────┘
+       ▲                     │
+       │         error? ─── HALT
+       │         human fixes, restarts
+       └─────────────────────┘
+```
 
-In the proven fox-code-cli workflow, "tasks" were two things:
-- **Scheduling entries** — checkboxes in phase files ("which plans are in this batch?")
-- **Progress trackers** — todo lists agents create from plans ("where am I?")
+**One feature at a time.** The `current/` bin holds exactly one feature. When it completes, it moves to `done/` and the next feature moves from `future/` to `current/`.
 
-Neither is a formal artifact. The plan contains all the substance (what to change, how to verify, edge cases). The todo list is a working memory aid for the agent — derived mechanically from the plan, updated as work progresses. Agent scratch (todos, traces, session state) lives in `.work/` and is gitignored.
+**Full auto until error.** Agent reviews happen at every stage. The triage agent auto-fixes what it can (up to 3 iterations). If it can't resolve a problem, the pipeline halts and the human is prompted.
 
-### Plan-to-Spec Cardinality: 1:1
-
-One plan per spec. If a spec is too big for one plan, split the spec. This keeps the done predicate clean: spec done = its plan done. No ambiguity about partial satisfaction.
+**The folder IS the record.** A feature enters `current/` as a single `feature.md`. As the pipeline processes it, specs, plans, tasks, reviews, and logs accumulate in the folder. When it moves to `done/`, the folder is a complete audit trail of everything that happened.
 
 ---
 
-## The Bin System
+## The Bins
 
-The two pipelines are **not** fully independent. They coordinate through a **bin system** — four bins that enforce immutability during execution, clean handoffs between stages, and halt-on-error safety.
-
-```
-  DESIGN STAGE                           EXECUTION STAGE
-
-  ┌─────────────┐    handoff    ┌─────────────┐   complete   ┌─────────┐
-  │   future/   │ ──────────▶  │  current/   │ ──────────▶ │  done/  │
-  │  (editable) │              │  (FROZEN)   │             │(archived)│
-  │             │              │             │             │         │
-  └─────────────┘              └─────────────┘             └─────────┘
-       ▲                            │
-       │                            │ failure
-       │   human fixes              ▼
-       │                     ┌─────────────┐
-       └──────────────────── │   error/    │
-                             │ (quarantine)│
-                             └─────────────┘
-```
-
-### Bin Rules
-
-| Bin | Owner | Mutable? | Meaning |
-|-----|-------|----------|---------|
-| `future/` | Human | **Yes** — specs can be edited, revised, reorganized | Features being designed; ready to submit |
-| `current/` | Daemon | **No** — frozen while in execution | Features the daemon has claimed and is processing |
-| `done/` | Nobody | **No** — archived | Features that passed all verification and acceptance |
-| `error/` | Human | **Yes** — human diagnoses and fixes | Features that failed in execution; need human attention before resubmission |
-
-**Key distinction:** `future/` is for features that are **ready to go**. `error/` is for features that **came back broken**. They never mix — you can't accidentally submit a broken feature.
+| Bin | Contents | Owner | Purpose |
+|-----|----------|-------|---------|
+| `future/` | Feature folders (each containing `feature.md`) | Human | Ordered queue of features to process next |
+| `current/` | Exactly one feature folder being processed | Daemon | Active processing — all stages happen here |
+| `done/` | Completed feature folders (full artifact trail) | Nobody | Archive — queryable via index |
 
 ### Transitions
 
-| Transition | Who triggers | What happens |
-|-----------|-------------|-------------|
-| `future → current` | **Human** (the handoff) | Human moves approved feature(s) to `current`. This is the buffer swap. Specs are now frozen. **Precondition:** `error/` must be empty (see Error Policy). |
-| `current → done` | **Daemon** (completion) | All plans verified green + feature acceptance tests pass. Daemon auto-archives: moves feature to `done/`. |
-| `current → error` | **Daemon** (failure) | Daemon can't resolve a problem. Writes diagnostic review, moves feature to `error/`. Pipeline halts. |
-| `error → future` | **Human** (fix complete) | Human has diagnosed and fixed the problem. Moves feature to `future/`, re-approves, ready for resubmission. |
-| `done → future` | **Human** (re-open) | Rare — a done feature needs rework. Human moves it back explicitly. |
+| Transition | Trigger | What happens |
+|-----------|---------|-------------|
+| `future → current` | Daemon (auto) | Pipeline takes the next feature from queue. Processing begins. |
+| `current → done` | Daemon (auto) | All tasks complete + acceptance tests pass. Feature archived. Next feature pulled. |
+| Error in `current` | Triage agent | Pipeline **halts**. Feature stays in `current/`. Human prompted. |
+| Human fixes error | Human | Human fixes the problem in `current/`, restarts pipeline. |
 
-### Error Policy: Halt on Error
-
-**If `error/` is not empty, the pipeline stops.** The daemon will not claim new features from `current/`. Features already being processed in `current/` complete or fail normally, but no new work starts.
-
-This is the simplest possible error handling:
-- No dependency graph traversal
-- No cascading error propagation
-- No selective blocking of affected features
-- Just: `error/` not empty → stopped → human fixes → `error/` empty → resumes
-
-**Handoff validation:** The system checks `error/` before allowing any `future → current` move. If anything is in `error/`, the handoff is rejected. Fix the error first.
-
-This prevents wasting compute on features that might fail for the same systemic reason, and forces the human to address problems before more work piles up.
-
-### No-Tearing Guarantee
-
-The producer never writes to what the consumer is reading:
-- **Human** cannot edit specs in `current/` (frozen)
-- **Daemon** cannot modify features in `future/` (human's domain)
-- **Escalation** moves the feature out of `current/` before the human edits anything
-
-This eliminates the need for `spec_version` pinning. The lock is at the bin level, not the artifact level.
-
-### The Fractal Pattern
-
-The same locking pattern applies at every handoff within Pipeline B:
-
-| Boundary | Producer | Consumer | Lock |
-|----------|----------|----------|------|
-| Pipeline A → B | Human (specs) | Daemon (execution) | Feature in `current/` = frozen |
-| Plan author → Plan reviewer | Planning agent | Review agent | Plan locked during review |
-| Implementer → Code reviewer | Coding agent | Review agent | Code locked during review |
-| Code reviewer → Triage | Review agent | Triage agent | Review findings locked during triage |
-
-**General rule:** Artifacts are immutable while being consumed by the next stage. If a stage needs to change something, it rejects back to the producer, who revises and re-submits. Never edit in place while someone else is reading.
+The human's job is to keep `future/` stocked with well-defined features, ordered by priority. Everything else is autonomous.
 
 ---
 
-## Feature-Scoped Directories
+## Feature Processing Stages
 
-**The filesystem IS the grouping.** Every artifact for a feature lives in its feature directory.
+When a feature enters `current/`, the pipeline runs these stages sequentially. Each stage has an agent review. The pipeline advances automatically on pass, halts on unresolvable failure.
+
+```
+1. SPEC GENERATION
+   feature.md → agent generates specs → agent reviews specs
+   Output: specs/ folder populated
+
+2. PLAN GENERATION
+   specs → agent generates plans (1:1 with specs) → agent reviews plans
+   Output: plans/ folder populated
+
+3. TASK LIST GENERATION
+   plans → agent generates consolidated task checklist
+   Output: tasks.md (checklist derived from all plans)
+
+4. TASK PROCESSING
+   For each task in tasks.md:
+     → Implement (code changes)
+     → Verify (typecheck, tests)
+     → Code review (agent reviewer, different model)
+     → Triage:
+         Pass → mark task done, next task
+         Auto-fixable → fix, re-verify (up to 3 iterations)
+         Not fixable → HALT (human prompted)
+
+5. FEATURE ACCEPTANCE
+   All tasks done → run feature acceptance tests
+   Pass → move to done/, pull next from future/
+   Fail → HALT (human prompted)
+```
+
+### Stage Details
+
+**1. Spec Generation.** The agent reads `feature.md` (scope, success metrics, in-scope items) and generates spec files — one per deliverable. Each spec has acceptance criteria, MUSTs, and verification commands. A different agent model reviews the specs.
+
+**2. Plan Generation.** One plan per spec (1:1). Each plan details: file locations, proposed changes, architecture decisions, edge cases, verification steps. A different agent model reviews the plans.
+
+**3. Task List Generation.** The agent reads all plans and generates a single `tasks.md` — a consolidated, ordered checklist of implementation steps. This is the agent's working todo list, not a formal artifact. It tracks progress as tasks are completed.
+
+**4. Task Processing.** The core loop. For each task: implement, verify, code review. The code reviewer MUST be a different model from the implementer. The triage agent decides: pass, auto-fix (up to 3 iterations), or halt for human.
+
+**5. Feature Acceptance.** Tests declared in `feature.md` that verify the feature works as a whole — not just that individual specs pass, but that the decomposition was correct. Catches composition failures.
+
+### Agent Reviews
+
+Every stage has an agent review. Reviews are committed to the feature's `reviews/` folder.
+
+| Stage | Author | Reviewer | On failure |
+|-------|--------|----------|------------|
+| Spec generation | Planning agent | Review agent (different model) | Auto-fix up to 3x, then halt |
+| Plan generation | Planning agent | Review agent (different model) | Auto-fix up to 3x, then halt |
+| Code review | Implementing agent | Review agent (different model) | Auto-fix up to 3x, then halt |
+
+**The triage agent** is the decision-maker at every failure point. It can:
+- Auto-fix and retry (implementation errors, test failures, review findings)
+- Halt and prompt the human (spec gaps, fundamental design issues, repeated failures)
+
+---
+
+## Feature Folder Structure
+
+A feature enters `current/` with just `feature.md`. As the pipeline processes it, artifacts accumulate:
 
 ```
 features/
-  future/                          ← DESIGN STAGE: human is working on these
-    F-044-dark-mode/
-      feature.md                   # definition, scope, metrics, acceptance tests, status
-      research/                    # optional pre-spec research
-      specs/
-        S-044-toggle.md            # frontmatter: feature: F-044, status: approved
-        S-045-persistence.md
-    F-045-settings/
-      ...
-
-  current/                         ← EXECUTION STAGE: daemon is processing these (FROZEN)
+  current/
     F-042-auth/
-      feature.md
-      specs/
+      feature.md              # human-authored: scope, metrics, acceptance tests
+      specs/                   # stage 1: generated from feature.md
         S-042-login.md
         S-043-session.md
-      plans/
-        P-042.md                   # frontmatter: implements: [S-042], status: in_progress
-        P-043.md                   # frontmatter: implements: [S-043], status: draft
-      reviews/                     # committed, durable
-        2026-09-29T20-18_P-042-code-review-iter1.md
-      .work/                       # gitignored: agent todos, scratch, tool traces
+      plans/                   # stage 2: one per spec
+        P-042.md
+        P-043.md
+      tasks.md                 # stage 3: consolidated checklist
+      reviews/                 # accumulated at every stage
+        2026-09-29T21-00_spec-review.md
+        2026-09-29T21-15_plan-review.md
+        2026-09-29T22-00_P-042-code-review.md
+        2026-09-29T22-30_P-043-code-review.md
+      logs/                    # agent output, errors, diagnostics
+        spec-gen.log
+        plan-gen.log
+        P-042-implement.log
+        P-043-implement.log
+      .work/                   # gitignored: agent scratch, tool traces
 
-  error/                           ← FAILED: needs human diagnosis before resubmission
-    F-041-notifications/
-      feature.md                   # status: escalated, failure history
-      specs/                       # unchanged from when it entered current/
+  future/                      # queue: just feature.md in each folder
+    F-043-settings/
+      feature.md
+    F-044-dark-mode/
+      feature.md
+
+  done/                        # archive: complete folders with all artifacts
+    F-040-onboarding/
+      feature.md
+      specs/
       plans/
-        P-041.md                   # status: done (code committed, green)
-        P-042.md                   # status: failed (3 attempts)
+      tasks.md                 # all items ✅
       reviews/
-        2026-09-29T22-00_P-042-failure-diagnostic.md
-
-  done/                            ← COMPLETED: archived, queryable via index
-    2026-Q3/                       # sharded by period for scale
-      F-040-onboarding/
+      logs/
 ```
 
-### Design Principles
+### Feature Definition (`feature.md`)
 
-**Filesystem groups.** The directory is the unit of work. An agent processing F-042 reads one directory, honors the bin's freeze, writes artifacts only under it.
-
-**Frontmatter names.** Each artifact declares its own relationships in YAML frontmatter:
+The only human-authored artifact:
 
 ```yaml
-# features/current/F-042-auth/feature.md
 ---
 id: F-042
 slug: auth
-status: in_progress       # draft | review | approved | in_progress | escalated | done | failed | superseded
-batch: 02                 # scheduling hint (priority grouping)
-priority: 2               # within batch
-blocked_by: []
+priority: 1
 related: [F-041]
-acceptance_tests:
-  - metric: "Login flow completes end-to-end"
-    command: "bun test test/e2e/login.test.ts"
-    pass: "exit 0"
-  - metric: "Session persists across refresh"
-    command: "bun test test/e2e/session.test.ts"
-    pass: "exit 0"
 ---
+
+## Scope
+Login flow and session management for the app.
+
+## Success Metrics
+- Login flow completes end-to-end
+- Session persists across browser refresh
+
+## In-Scope Items
+- IS-1: Login endpoint with JWT
+- IS-2: Session token storage
+- IS-3: Logout + token revocation
+
+## Acceptance Tests
+- test: "bun test test/e2e/login.test.ts"
+- test: "bun test test/e2e/session.test.ts"
 ```
 
-```yaml
-# features/current/F-042-auth/specs/S-042-login.md
----
-id: S-042
-feature: F-042
-status: approved
-acceptance_criteria:
-  - id: AC-1
-    scope_item: IS-2
-    description: "Login endpoint returns JWT on valid credentials"
----
-```
-
-```yaml
-# features/current/F-042-auth/plans/P-042.md
----
-id: P-042
-feature: F-042
-implements: [S-042]
-status: in_progress        # draft | in_progress | done | failed
-attempts: 1                # auto-fix iteration count
-max_attempts: 3            # configured cap
-author_model: gemini-3.8-flash
-reviewer_model: grok-3
----
-```
-
-**Index queries.** The coverage matrix, the queue, the feature status — all are computed views, not hand-maintained artifacts. Each child artifact declares its edges; the daemon walks frontmatter and writes SQLite. Markdown is the source of truth. SQLite is the query layer.
-
-**Daemon claims.** The daemon scans `features/current/`, reads frontmatter, claims features via SQLite lease (TTL + owner). No hand-edited schedule file.
-
-**Humans gate.** The human approves features and spec sets in the design stage, then moves them to `current/`. That's it. Everything else is the machine.
-
-### The Queue Is a Query, Not a File
-
-There is no `pipeline/current.md`. Status lives on feature frontmatter. The queue is derived:
-
-| Query | Meaning |
-|-------|---------|
-| `features/current/*/feature.md` where `status=approved AND blocked_by resolved` | Ready for daemon to claim |
-| `status=in_progress` | Claimed by daemon, being processed |
-| `status=escalated` | Returned to `future/` for human attention |
-| `status=done` | Complete, in `done/` bin |
-
-Scheduling order: `ORDER BY batch ASC, priority DESC, id ASC`. Defaults: batch=0, priority=0.
-
-### Coverage Matrix Is Computed
-
-The coverage matrix is not maintained by hand. It's computed from the frontmatter graph:
-
-- Each spec says `feature: F-042` and declares `acceptance_criteria: [{id: AC-1, scope_item: IS-2}]`
-- Each plan says `implements: [S-042]`
-- The daemon walks these edges and renders the matrix
-
-If coverage drifts, the frontmatter is wrong — fix the data, not a separate document.
-
-### Features Are a Graph
-
-Cross-cutting concerns (shared infrastructure, blocking dependencies) are expressed via frontmatter links, not directory structure:
-
-- `blocked_by: [F-041]` — F-042 can't start until F-041 is done
-- `related: [F-043]` — informational, no scheduling effect
-
-**Containment is the default** (the directory). **Links are the exception** (`blocked_by`, `related`).
-
-**Shared specs:** Do not share spec files between features. Promote the shared capability to its own feature and use `blocked_by`. A persistence spec needed by F-042 and F-043 becomes `F-044-persistence` with `F-042.blocked_by: [F-044]` and `F-043.blocked_by: [F-044]`.
-
-### `blocked_by` and Archived Features
-
-The index retains archived features (in `done/`). Blocker resolution queries the index by ID, not by directory scan. `blocked_by: [F-041]` resolves correctly whether F-041 is in `current/`, `done/`, or `done/2026-Q3/`.
-
-Auto-archival never fires on `done`. Archive is explicit and batched — a `synapse archive` command sweeps features in `done/` that are older than the current batch. This prevents silently breaking `blocked_by` resolution for dependents.
-
-### `@spec` Code Markers
-
-Code markers (`@spec S-042`) reference IDs, not paths. The index maps IDs to current locations, including archived features. `git mv` of a feature directory never breaks reverse traceability.
-
-### Agent Scratch Is Gitignored
-
-Agent checklists churn every session. Specs and approved plans are durable. Mixing them pollutes git history.
-
-- `reviews/` — committed, durable, dated filenames (`YYYY-MM-DDTHH-MM_{id}-iter{N}.md`)
-- `.work/` — gitignored: session todos, scratch files, tool traces
-
-**Plan frontmatter `status` is resume-authoritative.** The daemon reads plan statuses to know where to pick up after a crash. `.work/` is never needed for recovery.
-
-**On escalation:** the daemon copies relevant `.work/` excerpts (todo state, tool traces, failure diagnostics) into the committed review file, so the human gets evidence, not just a verdict.
-
-### Filesystem Scale
-
-- **Reindex:** Incremental — index on each write, full scan on startup only. Not per-pulse.
-- **Archive sharding:** `done/2026-Q3/`, `done/2026-Q4/` etc. to prevent flat directory of hundreds.
-- **ID allocation:** SQLite sequence. Globally monotonic, never reused, no filesystem race between concurrent writers.
+Everything else — specs, plans, tasks, reviews — is generated by the pipeline.
 
 ---
 
-## The Design Stage
+## Error Handling
 
-**Owner:** Human  
-**Pace:** Strategic, deliberate  
-**Agent role:** Research assistant, drafter, reviewer — but the human decides
+**Simple rule: error = halt.**
 
-### Flow
+When the triage agent determines a problem can't be auto-fixed:
 
-```
-Research  →  Feature definition  →  Spec drafting  →  Approval  →  Handoff to current/
-```
+1. Pipeline **stops**
+2. Feature stays in `current/` exactly where it failed
+3. Human is notified with a diagnostic (what failed, why, what was tried)
+4. All artifacts remain in the folder — the human can inspect specs, plans, reviews, logs
 
-1. **Research.** Human identifies a capability need. Agent assists with competitive analysis, codebase exploration, feasibility assessment. Research artifacts are optional and live in `features/future/F-NNN/research/`.
+**The human can:**
+- Fix the issue (edit specs, add context, adjust the feature definition)
+- Restart the pipeline (it resumes from where it left off)
+- Remove the feature from `current/` and put it back in `future/` (defer)
+- Remove the feature entirely (abandon)
 
-2. **Feature definition.** Human defines what to build: scope, success metrics, in-scope items, **feature acceptance tests**. Agent may draft, but human owns the "what." Creates `features/future/F-NNN-slug/feature.md` with `status: draft`.
+**Resumption.** The pipeline reads the current state of artifacts to know where to pick up:
+- Specs exist? Skip spec gen.
+- Plans exist? Skip plan gen.
+- `tasks.md` exists? Skip task gen, check which tasks are done.
+- Task marked done? Skip it, process next unchecked task.
 
-3. **Spec drafting.** Agent drafts ALL specs for a feature as a batch. Feature-scoped: a feature's full spec set is drafted together so composition and coverage are visible. Specs land in `features/future/F-NNN/specs/`.
-
-4. **Approval.** Human reviews the feature's complete spec set — all specs, computed coverage matrix, acceptance criteria — as one decision. Not individual specs. The batch is the unit of approval. Human sets `status: approved`.
-
-5. **Handoff.** Human moves the feature directory from `future/` to `current/`. This is the buffer swap. **Specs are now frozen.** The daemon will pick it up.
-
-### Feature Acceptance Tests
-
-Declared in `feature.md` frontmatter. Written from the feature definition by an agent OTHER than the implementer. These verify the *decomposition* — that the feature works as a whole, not just that individual specs pass.
-
-```yaml
-acceptance_tests:
-  - metric: "Dark mode toggle persists across browser restart"
-    command: "bun test test/e2e/dark-mode-persistence.test.ts"
-    pass: "exit 0"
-```
-
-Feature acceptance tests are a precondition for `status: done`. They catch composition failure — the one class of defect that spec-level tests structurally cannot catch.
-
-### The Human's Job
-
-- **Keep the queue full** — design ahead of execution
-- **Fix errors** — diagnose features in `error/`, fix specs, move to `future/` when ready
-- **Set priorities** — `batch` and `priority` in frontmatter; ordering of handoffs
+No special resume logic — the pipeline just checks what artifacts already exist and picks up from the first missing stage.
 
 ---
 
-## The Execution Stage
+## The Human's Role
 
-**Owner:** Agents (fully autonomous)  
-**Pace:** As fast as compute allows  
-**Human role:** Handle escalations only
+The human does two things:
 
-### Flow
+1. **Design features.** Write `feature.md` files and queue them in `future/`, ordered by priority. This is the creative, strategic work.
 
-```
-Daemon selects approved feature from current/
-  → Create plans (one per spec, 1:1)
-    → Agent peer review of plans (different model from author)
-      → Implement (generate todo in .work/, follow plan)
-        → Test (automated verification)
-          → Code review (agent reviewer)
-            → Triage (auto-fix or escalate)
-              → Feature acceptance tests
-                → Done → move to done/
-```
+2. **Fix errors.** When the pipeline halts, the human reads the diagnostic, fixes the problem, and restarts. This is reactive, not routine.
 
-### Daemon Runtime Loop
+The human **can** also:
+- Inspect any stage's output while the pipeline runs (reviews are committed in real-time)
+- Intervene to approve/reject at any stage if they choose (optional, not required)
+- Reorder `future/` at any time (pipeline only looks at the next feature)
 
-```
-0. CHECK: is features/error/ non-empty? → HALT (do not claim new work)
-1. Scan features/current/*/feature.md
-2. Select where status=approved AND blocked_by all resolved
-3. Claim via SQLite lease (feature_id, owner, expires_at, TTL)
-4. Set feature status: in_progress
-5. For each spec (ORDER BY id ASC):
-   a. If plan exists and spec unchanged → resume from plan status
-   b. If plan exists but spec changed → discard plan, recreate
-   c. If no plan → create plan, write to plans/ with status: draft
-   d. Agent peer review (different model from author)
-      - 2+ consecutive REQUEST_CHANGES → move to error/
-   e. Set plan status: in_progress
-   f. Implement (todo in .work/, code committed per plan)
-   g. Verify (typecheck, tests, plan verification commands)
-   h. Code review (agent reviewer)
-   i. Triage:
-      - Auto-fixable → fix, re-verify (up to max_attempts, default 3)
-      - Not fixable → move to error/
-   j. Set plan status: done
-6. Run feature acceptance tests (from feature.md)
-7. If all pass: move feature to done/ (auto-archive)
-8. If acceptance tests fail: move feature to error/
-9. Repeat from step 0
-```
-
-### Plan Gate (Agent-Owned)
-
-The plan gate is agent-owned — no human approval needed. But with explicit guardrails:
-
-1. **Different model.** Plan reviewer MUST be a different model from the plan author. (e.g., AGY creates, Grok reviews — as proven in fox-code-cli Phase 2B.)
-2. **Escalation trigger.** 2+ consecutive REQUEST_CHANGES on the same plan → auto-escalate to human via the escalation path.
-3. **Accepted risk.** This trades a small increase in plan defect rate for significantly higher throughput. Phase 2B caught 4 plan-quality issues via agent review — evidence that agent review works, but not that it catches everything.
-
-### Status Model
-
-**Feature status** (set on `feature.md`):
-
-| Status | Meaning | Writer |
-|--------|---------|--------|
-| `draft` | Feature being defined | Human |
-| `review` | Specs drafted, awaiting human review | Human |
-| `approved` | Human approved spec set, ready for handoff | Human |
-| `in_progress` | Daemon has claimed, execution underway | Daemon |
-| `escalated` | Returned to `future/`, needs human attention | Daemon |
-| `done` | All plans + acceptance tests pass | Daemon |
-| `failed` | Terminal — requires human replan (attempt cap exceeded) | Daemon |
-| `superseded` | Replaced by a newer feature | Human |
-
-**Plan status** (set on plan frontmatter):
-
-| Status | Meaning | Writer |
-|--------|---------|--------|
-| `draft` | Plan created, not yet reviewed | Daemon |
-| `in_progress` | Implementation underway | Daemon |
-| `done` | Verified green, code review passed | Daemon |
-| `failed` | Attempt cap exceeded, cannot resolve | Daemon |
-
-**Status authority is split:**
-- `draft → review → approved`: Human decisions, written by human
-- `approved → in_progress → done | escalated | failed`: Mechanical, written by daemon only
-- SQLite lease `(feature_id, owner, expires_at)`: Daemon only, never mirrored to markdown
-
-**Consistency assertion:** On every reindex, derive the expected feature status from child plan statuses and assert it matches the actual status. A disagreement is a mismatch halt — investigate, don't auto-correct.
-
-### Failure Handling
-
-**Repeated verification failure.** Each plan tracks `attempts` in frontmatter. After `max_attempts` (default 3) failed auto-fix iterations, the plan is set to `failed`. If any plan is `failed`, the feature moves to `error/`. The pipeline halts.
-
-**Partial feature failure.** Feature F-042 has P-042 (done, green) and P-043 (failed). The feature moves to `error/` with all artifacts intact. P-042's committed code stays in the repo — it's already green. P-043 is marked `failed`. The human sees the diagnostic review in `error/F-042/reviews/`.
-
-**Resume predicate.** After a crash, the daemon reads plan frontmatter:
-
-| `plan.status` | Artifacts present | Next action |
-|---------------|-------------------|-------------|
-| `draft` | Plan file exists | Review the plan |
-| `in_progress` | Partial code committed | Resume implementation |
-| `done` | Code + green tests | Skip — already complete |
-| `failed` | Failure review | Skip — in error/ |
-
-Resume requires only committed artifacts. `.work/` is never needed for recovery.
-
-**The uniform failure path.** Whenever the daemon can't resolve a problem:
-1. Sets `status: escalated` on `feature.md`
-2. Writes diagnostic review (what failed, why, what's still good, suggested action)
-3. Copies relevant `.work/` excerpts into the committed review file
-4. Reverts any partial uncommitted code from the failed plan
-5. Releases the SQLite lease
-6. Moves feature directory: `current/F-042 → error/F-042`
-7. Pipeline halts (no new claims until `error/` is empty)
-
-**Re-entry after fix.** When the human fixes an errored feature:
-1. Human diagnoses the problem in `error/` (reads diagnostic review)
-2. Human fixes specs, adds context, or restructures
-3. Human moves feature: `error/F-042 → future/F-042`
-4. Human sets `status: approved`
-5. Human moves feature: `future/F-042 → current/F-042` (normal handoff)
-6. On re-entry, the daemon checks each plan:
-   - Plan's spec **unchanged** + plan `done` → **skip** (work preserved)
-   - Plan's spec **unchanged** + plan `failed` → **retry** (fresh attempt)
-   - Plan's spec **changed** → **discard and replan** (stale)
-   - No plan exists → **create new plan**
-
-### Lease Management
-
-- **TTL:** Configurable, default 30 minutes. Renewed on each stage completion.
-- **Expiry recovery:** If a lease expires and `feature.md` says `in_progress` with no live lease, the daemon sets `status: escalated` and drops a review file noting the crash. (After N expiry-crashes on the same feature, set `status: failed`.)
-- **Crash reaping:** On startup, the daemon scans for `in_progress` features with expired/missing leases and escalates them.
-
-### Concurrency
-
-**Sequential in v1.** One feature at a time. The lease schema supports `max_concurrent: N` (config) for future parallelism.
-
-When parallelism is enabled, use git worktrees per feature for isolation — fox-code-cli already built this in 2G-3 (ephemeral worktrees + deterministic `PORT`/`TMPDIR`/`DATABASE_URL` allocation, cleanup on SIGINT/SIGTERM). Port that design; do not redesign it. Gate the increase on writing a merge-conflict policy (two features touching the same file).
-
-### Timeouts
-
-Every agent invocation has a timeout (per `AGENTS.md` rules):
-
-| Stage | Timeout |
-|-------|---------|
-| Plan creation | 300s |
-| Plan review | 300s |
-| Implementation | 900s |
-| Verification | 180s |
-| Code review | 300s |
-| Feature acceptance tests | 180s |
+But by default, the pipeline runs unattended. The human is notified on completion or error.
 
 ---
 
-## Error Handling: The Backpressure Mechanism
+## Design Properties
 
-Error is a **bin move** to quarantine, not an in-place edit:
+**1. Sequential.** One feature at a time. No concurrency, no leases, no dependency resolution during execution. The human sequences features by ordering `future/`.
 
-```
-features/current/F-042-auth/  →  features/error/F-042-auth/
-```
+**2. Autonomous.** Full auto from `feature.md` through implementation, testing, and review. No fixed human gates. The triage agent decides when to halt.
 
-The feature moves to `error/` with ALL its artifacts intact — specs, plans (done and failed), reviews, diagnostics. Plans are evidence: the human needs to see what succeeded, what failed, and why.
+**3. Self-contained.** The feature folder is the unit of work. Everything generated during processing lives in the folder. When it moves to `done/`, it's a complete, portable audit trail.
 
-The pipeline **halts** when `error/` is non-empty. This forces the human to address the problem before more work proceeds. The human reads the diagnostic review, fixes the root cause, and moves the feature to `future/` when ready to retry.
+**4. Fail-safe.** Error = halt. No partial states, no cascading failures, no orphaned work. The feature sits in `current/` right where it failed, with all evidence intact.
 
-Every error is **design stage work**: spec gaps, AC issues, fundamental design questions. The human handles it in their normal design flow, not in a separate operational mode.
+**5. Resumable.** The pipeline reads artifact state to determine where to pick up. Crash recovery is just: restart the pipeline.
 
 ---
 
-## Scheduling: Batches as Tags
+## The Processing Loop
 
-Batches group features for priority ordering. They're a **planning tag** on feature frontmatter, not a directory the runtime consults:
-
-```yaml
-batch: 02
-priority: 2
 ```
+loop:
+  if current/ is empty:
+    if future/ is empty:
+      IDLE (wait for human to queue features)
+    else:
+      move next feature from future/ to current/
 
-**Selection order:** `ORDER BY batch ASC, priority DESC, id ASC`. Missing values default to 0.
+  feature = current/*/
 
-The human controls scheduling by:
-1. Setting `batch` and `priority` on features in `future/`
-2. Choosing which features to move to `current/` and when (the handoff)
+  if no specs/:
+    generate specs → agent review → if fail after 3x: HALT
+  if no plans/:
+    generate plans → agent review → if fail after 3x: HALT
+  if no tasks.md:
+    generate task list
 
-Phase rotation from fox-code-cli maps to: move completed features to `done/`, move the next batch from `future/` to `current/`. The buffer swap is a deliberate human action — the human controls the timing and composition of each batch.
+  for each unchecked task in tasks.md:
+    implement → verify → code review
+    if review fails:
+      triage: auto-fix? → retry (up to 3x)
+      triage: can't fix? → HALT (notify human)
+    mark task done in tasks.md
+
+  run feature acceptance tests
+  if fail: HALT (notify human)
+
+  move feature to done/
+  goto loop
+```
 
 ---
 
-## What Changed from the Original Handbook
+## What This Simplifies
 
-| Original handbook / S-011–S-015 | This model |
-|--------------------------------|-----------|
-| Single linear pipeline (Feature → Spec → Plan → Task → Done) | Two async stages with bin-based coordination |
-| Four artifact types (Feature, Spec, Plan, Task) | Three artifacts (Feature, Spec, Plan) + runtime trackers |
-| Three gates (FEATURE_GATE, SPEC_GATE, PLAN_GATE) | One handoff (`future → current`). Plan gate is agent-owned. |
-| Per-artifact approval | Feature-batched approval (all specs reviewed together) |
-| Tasks as formal artifacts with templates and status machines | Todos as agent scratch (`.work/`, gitignored) |
-| Human as pipeline operator (performing gates) | Human as designer who fixes errors |
-| Synchronous gates (pipeline stops for human) | Async producer-consumer with halt-on-error |
-| Flat artifact directories with naming conventions | Feature-scoped directories with bin system |
-| Hand-maintained coverage matrix | Computed from frontmatter graph |
-| Hand-edited pipeline/current.md schedule | Queue is a query over feature status |
-| spec_version pinning for tearing prevention | Bin-level freeze (simpler, stronger) |
-| No feature acceptance tests in done predicate | Feature acceptance tests required for done |
-| Flat canonical scan set (S-015) | Feature-scoped directories under bin trees |
-| Product-scoped pipeline runs (S-012) | Feature-scoped execution |
-| 15-step fixed sequence (S-012) | Dynamic per-feature stage progression |
-| PIPELINE_SIGNAL protocol | Daemon reads frontmatter + SQLite (signals replaced by status) |
-| Errors mixed with normal workflow | Quarantine bin (`error/`) + halt-on-error policy |
+| Previous model (v4) | This model (v5) |
+|---------------------|----------------|
+| Four bins (future, current, error, done) | Three bins (future, current, done) |
+| Multiple features in current/ | One feature at a time |
+| SQLite lease management | No leases needed |
+| blocked_by dependency resolution | Human sequences features in future/ |
+| Error bin + halt-on-error policy | Error = halt in place |
+| Handoff validation (check error bin) | No validation needed — one at a time |
+| Spec gate (human approves specs) | Full auto — triage agent halts if needed |
+| Complex failure taxonomy (failed, superseded, escalated) | Two states: processing or halted |
+| Status authority split (human vs daemon) | Daemon owns all status in current/ |
+| Feature-batched spec approval | No batching — one feature, one flow |
 
 ---
 
 ## Design Rule
 
-> **Filesystem groups. Frontmatter names. Index queries. Daemon claims. Bins freeze. Errors halt. Humans gate.**
-
----
-
-## Repo Layout Addition
-
-Add to `AGENTS.md` §2 (repo layout):
-
-```
-features/                        # All feature work
-├── future/                      # Design stage: human-editable
-│   └── F-NNN-slug/
-│       ├── feature.md           # Writer: human
-│       ├── research/            # Writer: human + agents
-│       └── specs/               # Writer: agents (human reviews)
-├── current/                     # Execution stage: FROZEN, daemon-owned
-│   └── F-NNN-slug/
-│       ├── feature.md           # Writer: daemon (status transitions only)
-│       ├── specs/               # FROZEN — no edits
-│       ├── plans/               # Writer: daemon (agent-created)
-│       ├── reviews/             # Writer: daemon (agent-created, committed)
-│       └── .work/               # Gitignored: agent scratch
-├── error/                       # Quarantine: failed features, human diagnoses
-│   └── F-NNN-slug/
-│       ├── feature.md           # status: escalated, failure history
-│       ├── specs/               # Unchanged from execution
-│       ├── plans/               # Evidence: done + failed plans preserved
-│       └── reviews/             # Diagnostic reviews explaining failure
-└── done/                        # Archived: queryable via index
-    └── YYYY-QN/
-        └── F-NNN-slug/
-```
+> **One feature. Full auto. Halt on error. Folder is the record.**
