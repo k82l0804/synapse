@@ -1,11 +1,11 @@
 # Synapse Framework — Worked Examples
 
-> **Reference for:** [definitions.md](definitions.md) Part 9
-> **Examples:** SW Dev (F-042), Nav Sim (F-101), Defect Fix (S-200), Negative Examples
+> **Reference for:** [Specification](specification.md) Appendix
+> **Examples:** SW Dev (F-042), Nav Sim (F-101), Bug Fix (S-200), Negative Examples
 
 ---
 
-## Part 9 — Worked Examples
+## Worked Examples
 
 ### Example 1: SW Dev Feature → Spec → Plan
 
@@ -497,7 +497,7 @@ single mass points. The accuracy parameter θ controls the approximation thresho
 
 ---
 
-### Example 3: Non-Feature Work — Defect Fix
+### Example 3: Non-Feature Work — Bug Fix
 
 #### Spec: S-200 — Fix Signal Parser Crash on Empty Input
 
@@ -507,14 +507,14 @@ id: S-200
 version: 1
 name: fix-signal-parser-empty-input
 status: APPROVED
-work_type: defect
+work_type: fix
 created: 2026-09-29T08:00:00Z
 updated: 2026-09-29T09:00:00Z
 status_changed: 2026-09-29T09:00:00Z
 author: agent:agy-triage-001
 domain: sw-dev
 feature: NONE
-defect_ref: BUG-1234
+ticket: BUG-1234                   # Link to external tracker
 depends_on: []
 ---
 
@@ -572,7 +572,7 @@ This should return a parse error, not crash. The defect was reported in BUG-1234
 | AC-3 | MUST-1 | test:parser-error-message |
 ```
 
-**Note:** This spec has `feature: NONE` and `work_type: defect`, with a `defect_ref` pointing to the bug tracker. It follows the same structure but skips the FEATURE GATE.
+**Note:** This spec has `feature: NONE` and `work_type: fix`, with a `ticket` field pointing to the bug tracker. It follows the same structure but skips the FEATURE GATE.
 
 ---
 

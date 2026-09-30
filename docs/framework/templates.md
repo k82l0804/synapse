@@ -1,87 +1,14 @@
 # Synapse Framework — Artifact Templates
 
-> **Reference for:** [definitions.md](definitions.md) Part 4
-> **Templates:** Feature, Spec, Plan, Task, Approval Record
+> **Reference for:** [Specification](specification.md) §11
+> **Templates:** Spec, Plan, Task, Approval Record
+> **See also:** [Pipeline Architecture](pipeline-architecture.md) for the BRIEF.md template
 
 ---
 
-## Part 4 — Templates
+## Templates
 
-### Feature Template
-
-```yaml
----
-# === IDENTITY ===
-id: F-XXX                          # REQUIRED. Immutable after creation. Format: F-NNN
-version: 1                         # REQUIRED. Increments on each approved revision
-name: feature-name-kebab-case      # REQUIRED. Immutable (use new ID for name changes)
-status: DRAFT                      # REQUIRED. Enum: see state machine
-work_type: feature                 # REQUIRED. Enum: feature | defect | refactor | infra | spike
-
-# === TEMPORAL ===
-created: 2026-09-29T10:30:00Z      # REQUIRED. ISO 8601 with timezone
-updated: 2026-09-29T10:30:00Z      # REQUIRED. Updated on any change
-status_changed: 2026-09-29T10:30:00Z  # REQUIRED. Updated on status transition
-
-# === OWNERSHIP ===
-author: jane.smith                 # REQUIRED. Identity of creator
-stakeholders:                      # REQUIRED. At least one
-  - name: product-team
-    role: approver                 # Enum: approver | consulted | informed
-domain: sw-dev                     # REQUIRED. Domain profile ID
-
-# === RELATIONSHIPS ===
-specs: []                          # Populated as specs are written. Derived, not manually edited.
-depends_on: []                     # OPTIONAL. Other features this depends on.
-#  - id: F-XXX
-#    type: temporal                # temporal | soft (features don't have interface deps)
-supersedes: null                   # F-XXX-vN if this replaces a prior version
-superseded_by: null                # F-YYY if this was replaced
-
-# === PRIORITY ===
-priority: P1                       # OPTIONAL. Enum: P0 (critical) | P1 (high) | P2 (medium) | P3 (low)
----
-
-## Feature Description
-
-[One paragraph. What capability this adds. Why it matters to stakeholders.
-Written from the stakeholder's perspective — no implementation language.
-Test: A stakeholder can verify this by using the system, not by reading code.]
-
-## Success Metrics
-
-[Each metric must have: condition, outcome, measurement procedure, target, and owner.]
-
-| Metric ID | Condition | Observable Outcome | Measurement | Target | Owner |
-|-----------|-----------|-------------------|-------------|--------|-------|
-| M-1 | [when X happens] | [stakeholder observes Y] | [how to measure] | [threshold] | [who measures] |
-
-## Scope
-
-### In Scope
-
-[Bullet list. Each item should be traceable to at least one spec AC when specs are written.]
-
-- IS-1: [scope item]
-- IS-2: [scope item]
-
-### Out of Scope
-
-[Bullet list. Each item either references a future feature or is marked WONTDO.]
-
-- OS-1: [excluded item] → deferred to F-YYY
-- OS-2: [excluded item] → WONTDO: [rationale]
-
-## Acceptance Tests
-
-[Every metric must have a runnable end-to-end test. These test the FEATURE
-(stakeholder outcome), not individual spec ACs. Can be run by someone who
-has never read the specs.]
-
-| Metric | Acceptance Test | Pass Criterion |
-|--------|----------------|----------------|
-| M-1 | [test command or script] | [observable pass/fail] |
-```
+> **Note:** The BRIEF.md template is in [Pipeline Architecture](pipeline-architecture.md#briefmd-template) because it is the pipeline's input artifact, not a framework artifact with an ID.
 
 ---
 
@@ -94,7 +21,7 @@ id: S-XXX                          # REQUIRED. Immutable. Format: S-NNN
 version: 1                         # REQUIRED. Increments on approved revision
 name: spec-name-kebab-case         # REQUIRED. Immutable
 status: DRAFT                      # REQUIRED. Enum: see state machine
-work_type: feature                 # REQUIRED. Enum: feature | defect | refactor | infra | spike
+work_type: feature                 # REQUIRED. Enum: feature | fix | refactor | chore | spike
 
 # === TEMPORAL ===
 created: 2026-09-29T10:30:00Z
@@ -193,7 +120,7 @@ version: 1                         # REQUIRED.
 spec: S-XXX                        # REQUIRED. The spec this plan implements.
 spec_version: 1                    # REQUIRED. Which version of the spec.
 status: DRAFT
-work_type: feature                 # Inherited from spec
+work_type: feature                 # Inherited from spec. Enum: feature | fix | refactor | chore | spike
 
 # === TEMPORAL ===
 created: 2026-09-29T10:30:00Z

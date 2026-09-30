@@ -10,7 +10,7 @@
 
 ## What Flows Through the Pipeline
 
-The unit of work is a **change** — not a "feature." Features, bug fixes, refactors, chores, and spikes are all changes. They share the same four stages, the same three gates, and the same review cycle. A `kind` field in the change's brief selects which template fields and done-tests apply, but the pipeline itself doesn't branch.
+The unit of work is a **change**. Features, bug fixes, refactors, chores, and spikes are all changes. They share the same four stages, the same three gates, and the same review cycle. A `kind` field in the change's brief selects which template fields and done-tests apply, but the pipeline itself doesn't branch.
 
 This matters because it eliminates the "is this big enough to be a feature?" question. If you're changing something, it's a change. Pick the kind, write the brief, enter the pipeline.
 
