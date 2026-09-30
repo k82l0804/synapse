@@ -1,170 +1,175 @@
 # Synapse Pipeline Architecture
 
-> **Date:** 2026-09-29 (v5)  
+> **Date:** 2026-09-29 (v6)  
 > **Status:** Working draft  
-> **Supersedes:** This document supersedes `specs/S-011` through `specs/S-015` and `specs/pipeline-signal-protocol.md`. Those specs are hereby marked **superseded**.
+> **Supersedes:** `specs/S-011` through `specs/S-015` and `specs/pipeline-signal-protocol.md` are hereby marked **superseded**.
+
+---
+
+## What Is a Pipeline
+
+A pipeline requires four things. Anything less is a checklist.
+
+1. **A unit of work.** The thing that flows. One kind per pipeline.
+2. **At least two stages in fixed order.** Each stage has a crisp done test.
+3. **A handoff.** A place an item waits after one stage and before the next.
+4. **An admission rule.** When may an item enter the next stage? Minimum: previous stage passed its done test.
+
+That is enough. It can be four directories and `mv`.
 
 ---
 
 ## Overview
 
-Synapse processes features one at a time through a three-bin pipeline. The pipeline runs fully autonomous — no human gates — until the triage agent determines it cannot proceed, at which point the pipeline halts for human intervention.
+Synapse is a pipeline that processes **features** — one at a time, through four stages.
 
 ```
-  ┌──────────┐          ┌──────────┐          ┌──────────┐
-  │ future/  │ ──next─▶ │ current/ │ ──done─▶ │  done/   │
-  │ (queue)  │          │ (1 feat) │          │ (archive)│
-  └──────────┘          └──────────┘          └──────────┘
-       ▲                     │
-       │         error? ─── HALT
-       │         human fixes, restarts
-       └─────────────────────┘
+design/  →  plan/  →  build/  →  done/
 ```
 
-**One feature at a time.** The `current/` bin holds exactly one feature. When it completes, it moves to `done/` and the next feature moves from `future/` to `current/`.
-
-**Full auto until error.** Agent reviews happen at every stage. The triage agent auto-fixes what it can (up to 3 iterations). If it can't resolve a problem, the pipeline halts and the human is prompted.
-
-**The folder IS the record.** A feature enters `current/` as a single `feature.md`. As the pipeline processes it, specs, plans, tasks, reviews, and logs accumulate in the folder. When it moves to `done/`, the folder is a complete audit trail of everything that happened.
+The pipeline runs fully autonomous until the triage agent determines it cannot proceed, at which point it halts for human intervention.
 
 ---
 
-## The Bins
+## The Four Stages
 
-| Bin | Contents | Owner | Purpose |
-|-----|----------|-------|---------|
-| `future/` | Feature folders (each containing `feature.md`) | Human | Ordered queue of features to process next |
-| `current/` | Exactly one feature folder being processed | Daemon | Active processing — all stages happen here |
-| `done/` | Completed feature folders (full artifact trail) | Nobody | Archive — queryable via index |
+```
+┌──────────┐          ┌──────────┐          ┌──────────┐          ┌──────────┐
+│ design/  │ ───────▶ │  plan/   │ ───────▶ │  build/  │ ───────▶ │  done/   │
+│(design it)│          │ (plan it)│          │(build it)│          │(shipped) │
+│human+agent│          │autonomous│          │autonomous│          │ archive  │
+└──────────┘          └──────────┘          └──────────┘          └──────────┘
+```
 
-### Transitions
+| Stage | Bin | What happens | Who | Done test |
+|-------|-----|-------------|-----|-----------|
+| **Design** | `design/` | Human and agent research, discuss, and define the feature. Agent writes `feature.md` with traceability matrix. Feature is reviewed. | Human + agent (interactive) | Feature reviewed and approved by human |
+| **Plan** | `plan/` | Daemon generates specs from feature, reviews specs, generates plans from specs, reviews plans, generates task list from plans. | Daemon (autonomous) | All specs, plans, and task list generated and reviewed |
+| **Build** | `build/` | Daemon processes the task list: implement each task, verify, code review, triage. Run feature acceptance tests. | Daemon (autonomous) | All tasks complete + acceptance tests pass |
+| **Done** | `done/` | Complete. Feature folder is a full audit trail. | Nobody | — |
 
-| Transition | Trigger | What happens |
-|-----------|---------|-------------|
-| `future → current` | Daemon (auto) | Pipeline takes the next feature from queue. Processing begins. |
-| `current → done` | Daemon (auto) | All tasks complete + acceptance tests pass. Feature archived. Next feature pulled. |
-| Error in `current` | Triage agent | Pipeline **halts**. Feature stays in `current/`. Human prompted. |
-| Human fixes error | Human | Human fixes the problem in `current/`, restarts pipeline. |
+### Handoffs
 
-The human's job is to keep `future/` stocked with well-defined features, ordered by priority. Everything else is autonomous.
+Each `mv` is meaningful — it marks a transition in the kind of work:
+
+| Handoff | Trigger | Admission rule |
+|---------|---------|---------------|
+| `design/ → plan/` | Human approves feature | Feature reviewed, approved, all `depends_on` resolved |
+| `plan/ → build/` | Daemon (auto) | Specs + plans + task list generated and reviewed |
+| `build/ → done/` | Daemon (auto) | All tasks complete + acceptance tests pass |
+
+### Error at Any Stage
+
+Error = halt. The feature stays in whichever bin it's in. The pipeline stops. The human is notified, inspects the feature folder (all evidence is there), fixes the problem, and restarts.
 
 ---
 
-## Feature Processing Stages
+## The Unit of Work: A Feature Folder
 
-When a feature enters `current/`, the pipeline runs these stages sequentially. Each stage has an agent review. The pipeline advances automatically on pass, halts on unresolvable failure.
+A feature is a directory containing `feature.md` and all artifacts generated during processing.
 
-```
-1. SPEC GENERATION
-   feature.md → agent generates specs → agent reviews specs
-   Output: specs/ folder populated
-
-2. PLAN GENERATION
-   specs → agent generates plans (1:1 with specs) → agent reviews plans
-   Output: plans/ folder populated
-
-3. TASK LIST GENERATION
-   plans → agent generates consolidated task checklist
-   Output: tasks.md (checklist derived from all plans)
-
-4. TASK PROCESSING
-   For each task in tasks.md:
-     → Implement (code changes)
-     → Verify (typecheck, tests)
-     → Code review (agent reviewer, different model)
-     → Triage:
-         Pass → mark task done, next task
-         Auto-fixable → fix, re-verify (up to 3 iterations)
-         Not fixable → HALT (human prompted)
-
-5. FEATURE ACCEPTANCE
-   All tasks done → run feature acceptance tests
-   Pass → move to done/, pull next from future/
-   Fail → HALT (human prompted)
-```
-
-### Stage Details
-
-**1. Spec Generation.** The agent reads `feature.md` (scope, success metrics, in-scope items) and generates spec files — one per deliverable. Each spec has acceptance criteria, MUSTs, and verification commands. A different agent model reviews the specs.
-
-**2. Plan Generation.** One plan per spec (1:1). Each plan details: file locations, proposed changes, architecture decisions, edge cases, verification steps. A different agent model reviews the plans.
-
-**3. Task List Generation.** The agent reads all plans and generates a single `tasks.md` — a consolidated, ordered checklist of implementation steps. This is the agent's working todo list, not a formal artifact. It tracks progress as tasks are completed.
-
-**4. Task Processing.** The core loop. For each task: implement, verify, code review. The code reviewer MUST be a different model from the implementer. The triage agent decides: pass, auto-fix (up to 3 iterations), or halt for human.
-
-**5. Feature Acceptance.** Tests declared in `feature.md` that verify the feature works as a whole — not just that individual specs pass, but that the decomposition was correct. Catches composition failures.
-
-### Agent Reviews
-
-Every stage has an agent review. Reviews are committed to the feature's `reviews/` folder.
-
-| Stage | Author | Reviewer | On failure |
-|-------|--------|----------|------------|
-| Spec generation | Planning agent | Review agent (different model) | Auto-fix up to 3x, then halt |
-| Plan generation | Planning agent | Review agent (different model) | Auto-fix up to 3x, then halt |
-| Code review | Implementing agent | Review agent (different model) | Auto-fix up to 3x, then halt |
-
-**The triage agent** is the decision-maker at every failure point. It can:
-- Auto-fix and retry (implementation errors, test failures, review findings)
-- Halt and prompt the human (spec gaps, fundamental design issues, repeated failures)
-
----
-
-## Feature Folder Structure
-
-A feature enters `current/` with just `feature.md`. As the pipeline processes it, artifacts accumulate:
+### In `design/` (just the definition)
 
 ```
 features/
-  current/
+  design/
     F-042-auth/
-      feature.md              # human-authored: scope, metrics, acceptance tests
-      specs/                   # stage 1: generated from feature.md
-        S-042-login.md
-        S-043-session.md
-      plans/                   # stage 2: one per spec
-        P-042.md
-        P-043.md
-      tasks.md                 # stage 3: consolidated checklist
-      reviews/                 # accumulated at every stage
-        2026-09-29T21-00_spec-review.md
-        2026-09-29T21-15_plan-review.md
-        2026-09-29T22-00_P-042-code-review.md
-        2026-09-29T22-30_P-043-code-review.md
-      logs/                    # agent output, errors, diagnostics
-        spec-gen.log
-        plan-gen.log
-        P-042-implement.log
-        P-043-implement.log
-      .work/                   # gitignored: agent scratch, tool traces
-
-  future/                      # queue: just feature.md in each folder
+      feature.md                    # the only human-created artifact
     F-043-settings/
       feature.md
     F-044-dark-mode/
       feature.md
+```
 
-  done/                        # archive: complete folders with all artifacts
-    F-040-onboarding/
+### In `plan/` (specs, plans, tasks accumulate)
+
+```
+features/
+  plan/
+    F-042-auth/
+      feature.md
+      specs/
+        S-042-login.md
+        S-043-session.md
+      plans/
+        P-042.md
+        P-043.md
+      tasks.md                      # consolidated checklist
+      reviews/
+        spec-review.md
+        plan-review.md
+      logs/
+```
+
+### In `build/` (implementation artifacts accumulate)
+
+```
+features/
+  build/
+    F-042-auth/
       feature.md
       specs/
       plans/
-      tasks.md                 # all items ✅
+      tasks.md                      # tasks checked off as completed
+      reviews/
+        spec-review.md
+        plan-review.md
+        P-042-code-review.md
+        P-043-code-review.md
+      logs/
+        P-042-implement.log
+        P-043-implement.log
+      .work/                        # gitignored: agent scratch
+```
+
+### In `done/` (complete audit trail)
+
+```
+features/
+  done/
+    F-042-auth/
+      feature.md
+      specs/
+      plans/
+      tasks.md                      # all items ✅
       reviews/
       logs/
 ```
 
-### Feature Definition (`feature.md`)
+---
 
-The only human-authored artifact:
+## The Design Stage
+
+**Mode:** Interactive (human + agent)  
+**What happens:** The human and agent collaborate to define a feature.
+
+### Process
+
+1. **Research.** Human provides documents, URLs, domain knowledge. Agent researches, analyzes, synthesizes.
+2. **Discuss.** Human and agent iterate on scope, constraints, success metrics. Back and forth until the feature is well-defined.
+3. **Write.** When both agree the feature is ready, the agent writes `feature.md` — including a traceability matrix citing the sources (documents, URLs, conversations).
+4. **Review.** A different agent reviews the feature definition for completeness, clarity, and testability.
+5. **Approve.** Human approves the feature. It's ready to enter the pipeline.
+
+### Feature Definition (`feature.md`)
 
 ```yaml
 ---
 id: F-042
 slug: auth
-priority: 1
-related: [F-041]
+status: approved              # draft | review | approved
+depends_on: [F-041]           # must be done/ before this can process
+related: [F-043]              # informational, no ordering constraint
+sources:
+  - type: document
+    path: docs/research/auth-comparison.md
+    note: "Competitive analysis: all competitors support SSO"
+  - type: url
+    url: https://oauth.net/2.1/
+    note: "OAuth 2.1 spec for implementation reference"
+  - type: conversation
+    id: 4652af63-...
+    note: "Design discussion on auth flow requirements"
 ---
 
 ## Scope
@@ -184,120 +189,181 @@ Login flow and session management for the app.
 - test: "bun test test/e2e/session.test.ts"
 ```
 
-Everything else — specs, plans, tasks, reviews — is generated by the pipeline.
+### Dependencies
+
+Features in `design/` can have dependencies on each other. When moving features to `plan/`:
+
+- A feature **cannot enter `plan/`** if any of its `depends_on` targets are still in `design/`
+- Dependencies must be in `plan/`, `build/`, or `done/` (i.e., ahead in the pipeline)
+- When approving a dependency set, move them in dependency order — the dependency goes first
+- Since the pipeline is sequential, the dependency will reach `done/` before the dependent feature starts building
+
+```
+design/                           plan/
+  F-042-auth (approved)    ──▶     F-042-auth    (processed first)
+  F-043-settings (approved) ──▶   F-043-settings (processed second, F-042 done by then)
+```
+
+### Multiple Features Baking
+
+`design/` holds multiple features concurrently. They're in various states — some being researched, some being refined, some nearly ready, some dependent on each other. This is the creative workspace. The pipeline never looks here — only the human decides when a feature is ready to leave.
+
+---
+
+## The Plan Stage
+
+**Mode:** Autonomous  
+**What happens:** The daemon generates all artifacts needed for implementation.
+
+### Process
+
+```
+feature.md
+  → Generate specs (one per deliverable)
+  → Agent review of specs (different model from author)
+  → Generate plans (one per spec, 1:1)
+  → Agent review of plans (different model from author)
+  → Generate task list (consolidated checklist from all plans)
+```
+
+Each substep has an agent review. Reviews are committed to `reviews/`. If a review fails after 3 auto-fix iterations, the pipeline halts.
+
+### Done Test
+
+All of these exist in the feature folder and have passed review:
+- `specs/` — one spec per deliverable, each with acceptance criteria
+- `plans/` — one plan per spec, each with file locations, changes, edge cases, verification
+- `tasks.md` — consolidated, ordered task checklist
+- `reviews/` — spec review + plan review artifacts
+
+When all artifacts are generated and reviewed, the daemon moves the feature: `plan/ → build/`.
+
+---
+
+## The Build Stage
+
+**Mode:** Autonomous  
+**What happens:** The daemon processes the task list — implementing, testing, and reviewing each task.
+
+### Process
+
+```
+For each unchecked task in tasks.md:
+  → Implement (write code)
+  → Verify (typecheck, tests, plan verification commands)
+  → Code review (different model from implementer)
+  → Triage:
+      Pass → mark task done ✅, next task
+      Auto-fixable → fix, re-verify (up to 3 iterations)
+      Not fixable → HALT (notify human)
+
+All tasks done:
+  → Run feature acceptance tests (from feature.md)
+  → Pass → move to done/
+  → Fail → HALT (notify human)
+```
+
+### Agent Reviews
+
+| Review | Author | Reviewer | Rule |
+|--------|--------|----------|------|
+| Spec review | Planning agent | Different model | 3x auto-fix, then halt |
+| Plan review | Planning agent | Different model | 3x auto-fix, then halt |
+| Code review | Implementing agent | Different model | 3x auto-fix, then halt |
+
+### Done Test
+
+- All tasks in `tasks.md` marked complete ✅
+- Feature acceptance tests pass (from `feature.md`)
+
+When both conditions are met, the daemon moves the feature: `build/ → done/`.
 
 ---
 
 ## Error Handling
 
-**Simple rule: error = halt.**
+**Simple: error = halt.**
 
-When the triage agent determines a problem can't be auto-fixed:
+The triage agent is the decision-maker at every failure point. It can auto-fix implementation errors, test failures, and review findings (up to 3 iterations). If it can't resolve the problem, the pipeline halts.
 
-1. Pipeline **stops**
-2. Feature stays in `current/` exactly where it failed
-3. Human is notified with a diagnostic (what failed, why, what was tried)
-4. All artifacts remain in the folder — the human can inspect specs, plans, reviews, logs
+When halted:
+- The feature stays in whichever bin it's in (`plan/` or `build/`)
+- All artifacts remain — specs, plans, tasks, reviews, logs, diagnostics
+- The human is notified with what failed, why, and what was tried
+- The pipeline cannot resume until the human addresses the problem
 
-**The human can:**
-- Fix the issue (edit specs, add context, adjust the feature definition)
+The human can:
+- Fix the issue (edit `feature.md`, add context, clarify scope)
 - Restart the pipeline (it resumes from where it left off)
-- Remove the feature from `current/` and put it back in `future/` (defer)
+- Move the feature back to `design/` (needs rethinking)
 - Remove the feature entirely (abandon)
 
-**Resumption.** The pipeline reads the current state of artifacts to know where to pick up:
-- Specs exist? Skip spec gen.
-- Plans exist? Skip plan gen.
-- `tasks.md` exists? Skip task gen, check which tasks are done.
-- Task marked done? Skip it, process next unchecked task.
+### Resumption
 
-No special resume logic — the pipeline just checks what artifacts already exist and picks up from the first missing stage.
+The pipeline reads artifact state to know where to pick up:
+- No `specs/`? → Start spec generation
+- Specs exist, no `plans/`? → Start plan generation
+- Plans exist, no `tasks.md`? → Generate task list
+- `tasks.md` exists? → Process next unchecked task
+- All tasks done? → Run acceptance tests
+
+No special resume logic — just check what exists and pick up from the first missing piece.
 
 ---
 
 ## The Human's Role
 
-The human does two things:
+Two activities:
 
-1. **Design features.** Write `feature.md` files and queue them in `future/`, ordered by priority. This is the creative, strategic work.
+1. **Design features.** Work with an agent in `design/` — research, discuss, define, review. Creative, strategic, at your own pace.
 
-2. **Fix errors.** When the pipeline halts, the human reads the diagnostic, fixes the problem, and restarts. This is reactive, not routine.
+2. **Fix errors.** When the pipeline halts, read the diagnostics, fix the problem, restart. Reactive, not routine.
 
-The human **can** also:
-- Inspect any stage's output while the pipeline runs (reviews are committed in real-time)
-- Intervene to approve/reject at any stage if they choose (optional, not required)
-- Reorder `future/` at any time (pipeline only looks at the next feature)
+The human can also:
+- Inspect any stage while the pipeline runs (reviews are committed in real-time)
+- Reorder features in `design/` at any time
+- Intervene at any stage if they choose (optional, not required)
 
-But by default, the pipeline runs unattended. The human is notified on completion or error.
+By default, the pipeline runs unattended. The human is notified on completion or error.
 
 ---
 
 ## Design Properties
 
-**1. Sequential.** One feature at a time. No concurrency, no leases, no dependency resolution during execution. The human sequences features by ordering `future/`.
-
-**2. Autonomous.** Full auto from `feature.md` through implementation, testing, and review. No fixed human gates. The triage agent decides when to halt.
-
-**3. Self-contained.** The feature folder is the unit of work. Everything generated during processing lives in the folder. When it moves to `done/`, it's a complete, portable audit trail.
-
-**4. Fail-safe.** Error = halt. No partial states, no cascading failures, no orphaned work. The feature sits in `current/` right where it failed, with all evidence intact.
-
-**5. Resumable.** The pipeline reads artifact state to determine where to pick up. Crash recovery is just: restart the pipeline.
+1. **Sequential.** One feature at a time. No concurrency, no leases, no locks.
+2. **Autonomous.** Full auto from `plan/` through `build/` to `done/`. No fixed human gates. The triage agent halts when it must.
+3. **Self-contained.** The feature folder is the unit of work. Everything accumulates in it. When it reaches `done/`, it's a complete record.
+4. **Fail-safe.** Error = halt. No partial states, no cascading failures. Evidence preserved in place.
+5. **Resumable.** Check what artifacts exist, pick up from where you left off.
 
 ---
 
-## The Processing Loop
+## The Pipeline Loop
 
 ```
 loop:
-  if current/ is empty:
-    if future/ is empty:
-      IDLE (wait for human to queue features)
+  if error (pipeline halted):
+    WAIT for human to fix and restart
+
+  if build/ has a feature:
+    process next unchecked task
+    if all tasks done + acceptance tests pass:
+      mv build/ → done/
+
+  if plan/ has a feature:
+    generate next missing artifact (specs, plans, tasks)
+    if all artifacts generated and reviewed:
+      mv plan/ → build/
+
+  if plan/ and build/ are empty:
+    if design/ has an approved feature (status=approved, depends_on resolved):
+      mv design/ → plan/
     else:
-      move next feature from future/ to current/
-
-  feature = current/*/
-
-  if no specs/:
-    generate specs → agent review → if fail after 3x: HALT
-  if no plans/:
-    generate plans → agent review → if fail after 3x: HALT
-  if no tasks.md:
-    generate task list
-
-  for each unchecked task in tasks.md:
-    implement → verify → code review
-    if review fails:
-      triage: auto-fix? → retry (up to 3x)
-      triage: can't fix? → HALT (notify human)
-    mark task done in tasks.md
-
-  run feature acceptance tests
-  if fail: HALT (notify human)
-
-  move feature to done/
-  goto loop
+      IDLE (wait for human to approve a feature)
 ```
-
----
-
-## What This Simplifies
-
-| Previous model (v4) | This model (v5) |
-|---------------------|----------------|
-| Four bins (future, current, error, done) | Three bins (future, current, done) |
-| Multiple features in current/ | One feature at a time |
-| SQLite lease management | No leases needed |
-| blocked_by dependency resolution | Human sequences features in future/ |
-| Error bin + halt-on-error policy | Error = halt in place |
-| Handoff validation (check error bin) | No validation needed — one at a time |
-| Spec gate (human approves specs) | Full auto — triage agent halts if needed |
-| Complex failure taxonomy (failed, superseded, escalated) | Two states: processing or halted |
-| Status authority split (human vs daemon) | Daemon owns all status in current/ |
-| Feature-batched spec approval | No batching — one feature, one flow |
 
 ---
 
 ## Design Rule
 
-> **One feature. Full auto. Halt on error. Folder is the record.**
+> **One feature. Four stages. Full auto. Halt on error. Folder is the record.**
