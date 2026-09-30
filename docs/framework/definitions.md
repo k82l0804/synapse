@@ -8,7 +8,9 @@
 
 ## What This Framework Does
 
-This framework defines how work moves from an idea to verified code. It gives every artifact (feature, spec, plan, task) a standard structure, a lifecycle with review gates, and a traceability chain that connects stakeholder intent to tested implementation.
+This framework defines how work moves from an idea to verified code. It gives every artifact (change, spec, plan, task) a standard structure, a lifecycle with review gates, and a traceability chain that connects human intent to tested implementation.
+
+A **change** is the unit that flows through the pipeline. Features, bug fixes, refactors, chores, and spikes are all changes — same four bins, same pipeline, kind-specific templates and done tests.
 
 ---
 
@@ -51,51 +53,45 @@ Five artifact types carry work through the pipeline:
 
 | Artifact | What it is | Who creates it |
 |----------|-----------|---------------|
-| **Feature** | A stakeholder-observable capability — the *what* and *why* | Stakeholder or product owner |
+| **Change** | The unit of work that flows through the pipeline. Has a `kind`: `feature`, `fix`, `refactor`, `chore`, or `spike`. | Human + agent (collaborative) |
+| **Brief** (`BRIEF.md`) | The human-authored input in `design/`. Intent, non-goals, done-when, blast radius. Not a spec. | Human (agent drafts) |
 | **Spec** | A contract defining *what the system must do* — acceptance criteria, MUSTs, MUST NOTs | Engineer or spec author |
 | **Plan** | A blueprint for *how to implement* the spec — deliverables, verification methods | Implementer |
 | **Task** | An atomic unit of work within a plan — one agent, one deliverable | Plan author |
-| **Acceptance Test** | End-to-end proof that the feature works as the stakeholder intended | Tester (distinct from implementer) |
-
-Each artifact has an **ID** (like S-042) that never changes, a **status** (DRAFT → APPROVED → IN_PROGRESS → DONE), and **relational fields** that link it to its parent and children.
 
 ### The Workflow in 30 Seconds
 
 ```
-Stakeholder need
+Human intent
     ↓
-Feature (F-NNN)          ← what capability to build, why it matters
+Change + Brief   (design/)   ← human gate: approve the brief
     ↓
-Spec (S-NNN)             ← what the system must do (acceptance criteria, contracts)
+Specs            (plan/)     ← human gate: approve the spec set
     ↓
-Plan (P-NNN)             ← how to implement it (deliverables, verification)
+Plans + Tasks    (plan/)
     ↓
-Tasks (T-NNN)            ← atomic units of work for an agent or developer
+Code + Tests     (build/)
     ↓
-Code + Tests             ← implementation with @spec markers for traceability
-    ↓
-Feature Acceptance Test  ← independent proof the feature works end-to-end
+Done-When Verified (done/)  ← human gate: accept the result
 ```
 
 ### How It Actually Works (A Walkthrough)
 
-Imagine you want to add product registration to Synapse. Here's what happens:
+Imagine you want to add login to an app. Here's what happens:
 
-**1. Feature.** You write a feature description: "A user can register a local repository with Synapse so that the daemon can manage its pipeline." You define success metrics — what a stakeholder can observe when this works. This becomes **F-042**.
+**1. Brief.** You work with an agent to define the change. The agent researches, synthesizes, challenges scope. When you agree it's ready, the agent writes `BRIEF.md`: kind is `feature`, intent is one sentence, non-goals are explicit, done-when is an executable test command. This goes into `design/auth-login/`. You review and approve it (Brief Gate).
 
-**2. Spec.** An engineer writes a spec (S-042) that says *what the system must do* — not how. The spec has acceptance criteria ("AC-1: Running `synapse add /path/to/repo` creates a `repos.yaml` entry"), contract rules (MUST create the file, MUST NOT modify existing repo files), and a sizing constraint: the spec must be small enough to implement atomically — no intermediate checkpoints.
+**2. Specs.** The daemon reads the brief and generates specs — one per deliverable. Each spec says *what the system must do*. The specs go through dual agent review (RC). You review the spec *set* and approve it (Spec Gate). This freezes architecture.
 
-**3. Review.** The spec goes through agent review while still in DRAFT. Reviewer 1 (blind) produces a findings document. The author fixes obvious issues. Reviewer 2 (blind) produces another findings document. The findings are merged, triaged (must-fix / implementer-decides / deferred), and the must-fixes are patched. The **human** then decides: approve, or iterate again. Agents find problems; humans make decisions. We typically do 2-3 review iterations for specs — enough to catch real defects, not so many that reviewers start inventing problems.
+**3. Plans.** The daemon generates plans from approved specs — one plan per spec. Each plan says *how to implement* it: specific files, functions, algorithms. Plans go through RC. (You skim if you want.)
 
-**4. Plan.** Once the spec is approved, an implementer writes a plan (P-042) that says *how* to build it. The plan names specific files, functions, algorithms, and libraries — things the spec deliberately did not specify. The plan has deliverables (HLD-1: schema module, HLD-2: CLI handler) and a verification method for each acceptance criterion.
+**4. Tasks.** The plans are consolidated into a task checklist. Each task is atomic — one agent, one deliverable.
 
-**5. Tasks.** The plan is decomposed into tasks (T-001, T-002, ...) — each small enough for one agent to complete in one session. Tasks can depend on each other within the plan.
+**5. Build.** The daemon processes each task: implement → verify → RC. Triage handles failures autonomously (3 attempts), halts if it can't resolve.
 
-**6. Implementation.** Each task produces code and tests. The code carries `@spec S-042` markers so that any future reader (or automated audit) can trace from the code back to the spec, plan, feature, and stakeholder intent.
+**6. Acceptance.** When all tasks are done, the daemon runs the done-when tests from the brief. You run it, use it, decide it's the thing you meant (Acceptance Gate). It moves to `done/`.
 
-**7. Verification.** When all tasks are done, the plan runs its verification: do all acceptance criteria pass? Then the feature runs its **acceptance tests** — independent end-to-end tests that prove the stakeholder's capability actually works, not just that the code was written correctly.
-
-**The key insight:** Each layer adds detail but never contradicts the layer above. The feature says "register a repo." The spec says "create a `repos.yaml` entry." The plan says "use YAML.stringify with schema validation." Each is a faithful refinement of the one above.
+**The key insight:** Each layer adds detail but never contradicts the layer above. The brief says "login." The spec says "create a JWT session." The plan says "use jsonwebtoken with RS256." Each is a faithful refinement of the one above.
 
 ---
 
