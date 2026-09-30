@@ -68,7 +68,7 @@ One plan per spec. If a spec is too big for one plan, split the spec. This keeps
 
 ## The Bin System
 
-The two pipelines are **not** fully independent. They coordinate through a **bin system** — three bins that enforce immutability during execution and clean handoffs between stages.
+The two pipelines are **not** fully independent. They coordinate through a **bin system** — four bins that enforce immutability during execution, clean handoffs between stages, and halt-on-error safety.
 
 ```
   DESIGN STAGE                           EXECUTION STAGE
@@ -76,29 +76,51 @@ The two pipelines are **not** fully independent. They coordinate through a **bin
   ┌─────────────┐    handoff    ┌─────────────┐   complete   ┌─────────┐
   │   future/   │ ──────────▶  │  current/   │ ──────────▶ │  done/  │
   │  (editable) │              │  (FROZEN)   │             │(archived)│
-  │             │ ◀────────── │             │             │         │
-  └─────────────┘  escalation  └─────────────┘             └─────────┘
-       ▲                                                        │
-       │              explicit batched archive                  │
-       └────────────────────────────────────────────────────────┘
+  │             │              │             │             │         │
+  └─────────────┘              └─────────────┘             └─────────┘
+       ▲                            │
+       │                            │ failure
+       │   human fixes              ▼
+       │                     ┌─────────────┐
+       └──────────────────── │   error/    │
+                             │ (quarantine)│
+                             └─────────────┘
 ```
 
 ### Bin Rules
 
 | Bin | Owner | Mutable? | Meaning |
 |-----|-------|----------|---------|
-| `future/` | Human | **Yes** — specs can be edited, revised, reorganized | Features being designed; not yet handed to agents |
+| `future/` | Human | **Yes** — specs can be edited, revised, reorganized | Features being designed; ready to submit |
 | `current/` | Daemon | **No** — frozen while in execution | Features the daemon has claimed and is processing |
 | `done/` | Nobody | **No** — archived | Features that passed all verification and acceptance |
+| `error/` | Human | **Yes** — human diagnoses and fixes | Features that failed in execution; need human attention before resubmission |
+
+**Key distinction:** `future/` is for features that are **ready to go**. `error/` is for features that **came back broken**. They never mix — you can't accidentally submit a broken feature.
 
 ### Transitions
 
 | Transition | Who triggers | What happens |
 |-----------|-------------|-------------|
-| `future → current` | **Human** (the handoff) | Human moves approved feature(s) to `current`. This is the buffer swap. Specs are now frozen. |
-| `current → done` | **Daemon** (completion) | All plans verified green + feature acceptance tests pass. Daemon sets `status: done`. |
-| `current → future` | **Daemon** (escalation) | Daemon can't resolve a problem. Releases claim, returns feature to `future`. Human can now edit specs. All in-progress plans are discarded; completed sibling plans stay committed. |
+| `future → current` | **Human** (the handoff) | Human moves approved feature(s) to `current`. This is the buffer swap. Specs are now frozen. **Precondition:** `error/` must be empty (see Error Policy). |
+| `current → done` | **Daemon** (completion) | All plans verified green + feature acceptance tests pass. Daemon auto-archives: moves feature to `done/`. |
+| `current → error` | **Daemon** (failure) | Daemon can't resolve a problem. Writes diagnostic review, moves feature to `error/`. Pipeline halts. |
+| `error → future` | **Human** (fix complete) | Human has diagnosed and fixed the problem. Moves feature to `future/`, re-approves, ready for resubmission. |
 | `done → future` | **Human** (re-open) | Rare — a done feature needs rework. Human moves it back explicitly. |
+
+### Error Policy: Halt on Error
+
+**If `error/` is not empty, the pipeline stops.** The daemon will not claim new features from `current/`. Features already being processed in `current/` complete or fail normally, but no new work starts.
+
+This is the simplest possible error handling:
+- No dependency graph traversal
+- No cascading error propagation
+- No selective blocking of affected features
+- Just: `error/` not empty → stopped → human fixes → `error/` empty → resumes
+
+**Handoff validation:** The system checks `error/` before allowing any `future → current` move. If anything is in `error/`, the handoff is rejected. Fix the error first.
+
+This prevents wasting compute on features that might fail for the same systemic reason, and forces the human to address problems before more work piles up.
 
 ### No-Tearing Guarantee
 
@@ -153,10 +175,19 @@ features/
         2026-09-29T20-18_P-042-code-review-iter1.md
       .work/                       # gitignored: agent todos, scratch, tool traces
 
+  error/                           ← FAILED: needs human diagnosis before resubmission
+    F-041-notifications/
+      feature.md                   # status: escalated, failure history
+      specs/                       # unchanged from when it entered current/
+      plans/
+        P-041.md                   # status: done (code committed, green)
+        P-042.md                   # status: failed (3 attempts)
+      reviews/
+        2026-09-29T22-00_P-042-failure-diagnostic.md
+
   done/                            ← COMPLETED: archived, queryable via index
     2026-Q3/                       # sharded by period for scale
       F-040-onboarding/
-      F-041-notifications/
 ```
 
 ### Design Principles
@@ -319,7 +350,7 @@ Feature acceptance tests are a precondition for `status: done`. They catch compo
 ### The Human's Job
 
 - **Keep the queue full** — design ahead of execution
-- **Handle escalations** — features returned to `future/` with diagnostic review files
+- **Fix errors** — diagnose features in `error/`, fix specs, move to `future/` when ready
 - **Set priorities** — `batch` and `priority` in frontmatter; ordering of handoffs
 
 ---
@@ -347,25 +378,29 @@ Daemon selects approved feature from current/
 ### Daemon Runtime Loop
 
 ```
+0. CHECK: is features/error/ non-empty? → HALT (do not claim new work)
 1. Scan features/current/*/feature.md
 2. Select where status=approved AND blocked_by all resolved
 3. Claim via SQLite lease (feature_id, owner, expires_at, TTL)
 4. Set feature status: in_progress
 5. For each spec (ORDER BY id ASC):
-   a. Create plan → write to plans/ with status: draft
-   b. Agent peer review (different model from author)
-      - 2+ consecutive REQUEST_CHANGES → escalate to human
-   c. Set plan status: in_progress
-   d. Implement (todo in .work/, code committed per plan)
-   e. Verify (typecheck, tests, plan verification commands)
-   f. Code review (agent reviewer)
-   g. Triage:
+   a. If plan exists and spec unchanged → resume from plan status
+   b. If plan exists but spec changed → discard plan, recreate
+   c. If no plan → create plan, write to plans/ with status: draft
+   d. Agent peer review (different model from author)
+      - 2+ consecutive REQUEST_CHANGES → move to error/
+   e. Set plan status: in_progress
+   f. Implement (todo in .work/, code committed per plan)
+   g. Verify (typecheck, tests, plan verification commands)
+   h. Code review (agent reviewer)
+   i. Triage:
       - Auto-fixable → fix, re-verify (up to max_attempts, default 3)
-      - Not fixable → escalate
-   h. Set plan status: done
+      - Not fixable → move to error/
+   j. Set plan status: done
 6. Run feature acceptance tests (from feature.md)
-7. If all pass: set feature status: done
-8. Repeat
+7. If all pass: move feature to done/ (auto-archive)
+8. If acceptance tests fail: move feature to error/
+9. Repeat from step 0
 ```
 
 ### Plan Gate (Agent-Owned)
@@ -409,9 +444,9 @@ The plan gate is agent-owned — no human approval needed. But with explicit gua
 
 ### Failure Handling
 
-**Repeated verification failure.** Each plan tracks `attempts` in frontmatter. After `max_attempts` (default 3) failed auto-fix iterations, the plan is set to `failed`. If any plan is `failed`, the feature is escalated.
+**Repeated verification failure.** Each plan tracks `attempts` in frontmatter. After `max_attempts` (default 3) failed auto-fix iterations, the plan is set to `failed`. If any plan is `failed`, the feature moves to `error/`. The pipeline halts.
 
-**Partial feature failure.** Feature F-042 has P-042 (done, green) and P-043 (failed). The feature goes `escalated` and returns to `future/`. P-042's committed code stays — it's already green and committed. P-043 is marked `failed`. The human sees the diagnostic review, fixes the spec or problem, and the feature re-enters `current/`. On re-entry, the daemon sees P-042 is `done` and picks up from P-043.
+**Partial feature failure.** Feature F-042 has P-042 (done, green) and P-043 (failed). The feature moves to `error/` with all artifacts intact. P-042's committed code stays in the repo — it's already green. P-043 is marked `failed`. The human sees the diagnostic review in `error/F-042/reviews/`.
 
 **Resume predicate.** After a crash, the daemon reads plan frontmatter:
 
@@ -420,15 +455,30 @@ The plan gate is agent-owned — no human approval needed. But with explicit gua
 | `draft` | Plan file exists | Review the plan |
 | `in_progress` | Partial code committed | Resume implementation |
 | `done` | Code + green tests | Skip — already complete |
-| `failed` | Failure review | Skip — escalation pending |
+| `failed` | Failure review | Skip — in error/ |
 
 Resume requires only committed artifacts. `.work/` is never needed for recovery.
 
-**Escalation exit.** When the human fixes an escalated feature and wants to re-submit:
-1. Human revises specs in `future/` (now editable)
-2. Human sets `status: approved`
-3. Human moves feature back to `current/`
-4. On re-entry: failed/stale plans are discarded (specs changed); done plans are kept if their spec is unchanged
+**The uniform failure path.** Whenever the daemon can't resolve a problem:
+1. Sets `status: escalated` on `feature.md`
+2. Writes diagnostic review (what failed, why, what's still good, suggested action)
+3. Copies relevant `.work/` excerpts into the committed review file
+4. Reverts any partial uncommitted code from the failed plan
+5. Releases the SQLite lease
+6. Moves feature directory: `current/F-042 → error/F-042`
+7. Pipeline halts (no new claims until `error/` is empty)
+
+**Re-entry after fix.** When the human fixes an errored feature:
+1. Human diagnoses the problem in `error/` (reads diagnostic review)
+2. Human fixes specs, adds context, or restructures
+3. Human moves feature: `error/F-042 → future/F-042`
+4. Human sets `status: approved`
+5. Human moves feature: `future/F-042 → current/F-042` (normal handoff)
+6. On re-entry, the daemon checks each plan:
+   - Plan's spec **unchanged** + plan `done` → **skip** (work preserved)
+   - Plan's spec **unchanged** + plan `failed` → **retry** (fresh attempt)
+   - Plan's spec **changed** → **discard and replan** (stale)
+   - No plan exists → **create new plan**
 
 ### Lease Management
 
@@ -457,21 +507,19 @@ Every agent invocation has a timeout (per `AGENTS.md` rules):
 
 ---
 
-## Escalation: The Backpressure Mechanism
+## Error Handling: The Backpressure Mechanism
 
-Escalation is a **bin move**, not an in-place edit:
+Error is a **bin move** to quarantine, not an in-place edit:
 
 ```
-features/current/F-042-auth/  →  features/future/F-042-auth/
+features/current/F-042-auth/  →  features/error/F-042-auth/
 ```
 
-The daemon:
-1. Sets `status: escalated` on `feature.md`
-2. Copies relevant `.work/` diagnostics into a committed review file
-3. Releases the SQLite lease
-4. Moves the feature directory from `current/` to `future/`
+The feature moves to `error/` with ALL its artifacts intact — specs, plans (done and failed), reviews, diagnostics. Plans are evidence: the human needs to see what succeeded, what failed, and why.
 
-Now the human can safely edit specs — the feature is back in their domain. Every escalation is **design stage work**: spec gaps, AC issues, fundamental design questions. The human handles it in their normal design flow.
+The pipeline **halts** when `error/` is non-empty. This forces the human to address the problem before more work proceeds. The human reads the diagnostic review, fixes the root cause, and moves the feature to `future/` when ready to retry.
+
+Every error is **design stage work**: spec gaps, AC issues, fundamental design questions. The human handles it in their normal design flow, not in a separate operational mode.
 
 ---
 
@@ -503,8 +551,8 @@ Phase rotation from fox-code-cli maps to: move completed features to `done/`, mo
 | Three gates (FEATURE_GATE, SPEC_GATE, PLAN_GATE) | One handoff (`future → current`). Plan gate is agent-owned. |
 | Per-artifact approval | Feature-batched approval (all specs reviewed together) |
 | Tasks as formal artifacts with templates and status machines | Todos as agent scratch (`.work/`, gitignored) |
-| Human as pipeline operator (performing gates) | Human as designer who handles escalations |
-| Synchronous gates (pipeline stops for human) | Async producer-consumer (neither blocks the other) |
+| Human as pipeline operator (performing gates) | Human as designer who fixes errors |
+| Synchronous gates (pipeline stops for human) | Async producer-consumer with halt-on-error |
 | Flat artifact directories with naming conventions | Feature-scoped directories with bin system |
 | Hand-maintained coverage matrix | Computed from frontmatter graph |
 | Hand-edited pipeline/current.md schedule | Queue is a query over feature status |
@@ -514,12 +562,13 @@ Phase rotation from fox-code-cli maps to: move completed features to `done/`, mo
 | Product-scoped pipeline runs (S-012) | Feature-scoped execution |
 | 15-step fixed sequence (S-012) | Dynamic per-feature stage progression |
 | PIPELINE_SIGNAL protocol | Daemon reads frontmatter + SQLite (signals replaced by status) |
+| Errors mixed with normal workflow | Quarantine bin (`error/`) + halt-on-error policy |
 
 ---
 
 ## Design Rule
 
-> **Filesystem groups. Frontmatter names. Index queries. Daemon claims. Bins freeze. Humans gate.**
+> **Filesystem groups. Frontmatter names. Index queries. Daemon claims. Bins freeze. Errors halt. Humans gate.**
 
 ---
 
@@ -541,6 +590,12 @@ features/                        # All feature work
 │       ├── plans/               # Writer: daemon (agent-created)
 │       ├── reviews/             # Writer: daemon (agent-created, committed)
 │       └── .work/               # Gitignored: agent scratch
+├── error/                       # Quarantine: failed features, human diagnoses
+│   └── F-NNN-slug/
+│       ├── feature.md           # status: escalated, failure history
+│       ├── specs/               # Unchanged from execution
+│       ├── plans/               # Evidence: done + failed plans preserved
+│       └── reviews/             # Diagnostic reviews explaining failure
 └── done/                        # Archived: queryable via index
     └── YYYY-QN/
         └── F-NNN-slug/
