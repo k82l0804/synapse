@@ -38,16 +38,27 @@ A pipeline with today's best models is a strong junior staff: fast drafts, fast 
 Every artifact produced in the pipeline goes through the same cycle. Define it once, use it everywhere.
 
 ```
-Agent produces artifact
-  → Different agent reviews
-  → Pass → proceed
-  → Fail → auto-fix, re-review (up to 3 iterations)
-  → Still failing → HALT (human prompted)
+Author produces artifact
+  → Reviewer A reviews (different vendor from Author)
+  → Reviewer B reviews (third vendor)
+  → Triage (not Author's vendor) applies rubric:
+      Both approve, nits only        → auto_advance (or send_back for nit fixes)
+      Freeze-point artifact          → human
+      Reviewers disagree             → human
+      New public surface / behavior  → human
+      Still failing after 3 fix iterations → HALT
 ```
 
-**At any RC, the human may optionally inspect and approve/reject.** The RC runs autonomously by default — the human is not required unless triage halts.
+**Structural rules:**
+- **One author family per feature.** All generation for a feature uses the same vendor. Vocabulary drift across vendors looks like design drift.
+- **Reviewers never see the generation transcript.** They receive the artifact + its parent (feature/spec) only.
+- **Triage never sees the generation transcript.** It receives the artifact + two review reports + rubric.
+- **Triage cannot edit files.** If fixes are needed, a separate Author run applies them.
+- **Auto-advance is illegal at gates.** Feature, spec set, and acceptance always require the human, regardless of reviewer approval.
 
-Shorthand: **RC** means this cycle. When the doc says "→ RC", it means the full review-triage loop above.
+**At any RC, the human may optionally inspect and approve/reject.** The RC runs autonomously by default — the human is not required unless triage routes to them.
+
+Shorthand: **RC** means this full cycle. When the doc says "→ RC", it means dual review + triage.
 
 ---
 
@@ -344,6 +355,73 @@ loop:
     else:
       IDLE
 ```
+
+## Roles & Tiers
+
+The pipeline has seven roles. Each role requires a specific tier of model capability. Roles are abstract — the actual vendor and model assignment is configuration.
+
+### Pipeline Roles
+
+| Role | What it does | Constraints |
+|------|-------------|-------------|
+| **Author** | Generates artifacts (features, specs, plans) | One vendor family per feature. Consistency in voice and vocabulary. |
+| **Fixer** | Revises artifacts after review findings | Same family as Author. Keeps names and structure stable. |
+| **Reviewer A** | First independent review | Must be different vendor from Author. |
+| **Reviewer B** | Second independent review | Must be different vendor from both Author and Reviewer A. |
+| **Triage** | Decides: `auto_advance` \| `human` \| `send_back` | Must NOT be Author's family. Fresh context. Rubric only. |
+| **Implementer** | Writes code behind frozen specs | Can drop a tier. Volume over taste. |
+| **Impl Reviewer** | Reviews risky diffs during build | Different vendor from Implementer. Catches invented scope. |
+
+### Model Tiers
+
+Three tiers, defined by capability class, not by vendor:
+
+| Tier | Capability | Use for |
+|------|-----------|--------|
+| **Flagship** | Best reasoning, longest context, highest quality | Authoring product artifacts, reviewing design artifacts |
+| **Mid** | Good reasoning, good tool use, cost-efficient | Implementation, routine plan generation |
+| **Fast** | Structured output, quick, cheap | Triage, mechanical tasks, high-volume calls |
+
+### Role → Tier Mapping
+
+| Role | Required Tier | Why |
+|------|--------------|-----|
+| Author | Flagship | Product quality. One voice across the artifact set. |
+| Fixer | Flagship | Same model as Author. Consistency. |
+| Reviewer A | Flagship | Must catch scope creep, vagueness, unjustified additions. |
+| Reviewer B | Flagship | Must catch set-level coverage gaps and cross-artifact drift. |
+| Triage | Fast | Rubric only. Cheap is fine. Independence matters more than intelligence. |
+| Implementer | Mid or Fast | Spec is frozen. Paying for turns and tools, not product taste. |
+| Impl Reviewer | Flagship | Catches invented surface area. One critic, not a second author. |
+
+### Harness Tiers (Current)
+
+Available agent harnesses and their model tiers:
+
+| Harness | CLI | Flagship | Mid | Fast |
+|---------|-----|----------|-----|------|
+| **Claude** | `claude -p` | Opus 5 | Sonnet 4.6 | Haiku |
+| **Grok** | `grok -p` | Grok 4.7 | — | — |
+| **Gemini (AGY)** | `agy -p` | Gemini 2.5 Pro | Gemini 2.5 Flash | Flash Lite |
+
+### Current Assignment (Example)
+
+This is the current recommended assignment. It is a configuration, not architecture — swap vendors as models improve.
+
+| Role | Harness | Model | Tier |
+|------|---------|-------|------|
+| Author | Claude | Opus 5 | Flagship |
+| Fixer | Claude | Opus 5 | Flagship |
+| Reviewer A | Grok | Grok 4.7 | Flagship |
+| Reviewer B | Gemini (AGY) | Gemini 2.5 Pro | Flagship |
+| Triage | Gemini (AGY) | Gemini 2.5 Flash | Fast |
+| Implementer | Claude | Sonnet 4.6 | Mid |
+| Impl Reviewer | Grok | Grok 4.7 | Flagship |
+| Gates (Feature, Spec, Accept) | — | **You** | — |
+
+**Why this split:** Claude is the strongest structured author. Grok punches at scope and vagueness. Gemini catches coverage and cross-file seams. Two vendors disagreeing is the review you want — not one vendor talking to itself.
+
+**Cost allocation:** Spend flagship tokens on *author once* and *two reviews of design artifacts*. Spend fast tokens on *triage and most implementation*. Spend your time on *three gates*.
 
 ---
 
