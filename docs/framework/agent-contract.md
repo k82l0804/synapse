@@ -387,13 +387,18 @@ FOR each @spec marker in codebase:
 | Artifact | Location within change folder | Naming |
 |----------|------------------------------|--------|
 | Change | `change.md` | Always `change.md` |
-| Specs | `specs/S-NNN-kebab-name.md` | Stable after creation |
+| Specs | `specs/S-NNN.md` | Stable after creation |
+| Spec reviews | `specs/reviews/` | `iter-N-reviewer-a.md`, `iter-N-triage.md` |
+| Spec approval | `specs/reviews/done.md` | Human creates when approved |
 | Plans | `plans/P-NNN.md` | Stable after creation |
-| Tasks | `tasks.md` | Consolidated checklist |
-| Reviews | `reviews/{type}-review.md` | Append iteration number |
+| Plan reviews | `plans/reviews/` | `reviewer-a.md`, `triage.md` |
+| Plan approval | `plans/reviews/done.md` | Human or daemon creates |
+| Tasks | `tasks/T-NNN.md` | One per task |
+| Task reviews | `tasks/reviews/` | `T-NNN-code-review.md` |
+| Tasks done | `tasks/reviews/done.md` | Daemon creates when all verified |
+| Acceptance | `done.md` | Human creates (final acceptance) |
 | Logs | `logs/` | Timestamped, append-only |
 | Agent scratch | `.work/` | Gitignored |
-| Approval records | `reviews/AR-NNN.md` | Immutable after creation |
 
 ---
 

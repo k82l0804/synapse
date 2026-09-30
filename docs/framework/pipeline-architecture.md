@@ -90,21 +90,21 @@ loop:
   if folder/specs/ missing:
     run spec-gen → RC
 
-  if folder/specs/done.md missing:
+  if folder/specs/reviews/done.md missing:
     WAIT (human approves spec set)
 
   if folder/plans/ missing:
     run plan-gen → RC
 
-  if folder/plans/done.md missing:
+  if folder/plans/reviews/done.md missing:
     WAIT (human reviews, or auto-advance for non-product artifacts)
 
   if folder/tasks/ missing:
     run task-gen
 
-  if folder/tasks/done.md missing:
+  if folder/tasks/reviews/done.md missing:
     run build (implement → verify → RC per task)
-    when all tasks pass: create tasks/done.md
+    when all tasks pass: create tasks/reviews/done.md
 
   if folder/done.md missing:
     run done-when tests from change.md
@@ -128,7 +128,7 @@ Each stage is marked complete by a `done.md` file in the appropriate directory. 
 3. **Audit trail** — the approval is right there in the change folder
 
 ```markdown
-# done.md (example: specs/done.md)
+# done.md (example: specs/reviews/done.md)
 
 Approved by: jane.smith
 Date: 2026-09-30T17:25:00Z
@@ -136,16 +136,16 @@ RC iterations: 2
 Notes: Good decomposition. S-02 is tight. Proceed to plans.
 ```
 
-**Rollback:** Delete `specs/done.md` and the daemon reverts to waiting for spec approval. The specs themselves are unchanged — the human can request revisions.
+**Rollback:** Delete `specs/reviews/done.md` and the daemon reverts to waiting for spec approval. The specs themselves are unchanged — the human can request revisions.
 
 ### Who Creates `done.md`
 
 | Stage | Who creates done.md | Why |
 |-------|-------------------|-----|
 | `change.md` approval | Human (always) | This is intent. Only the human freezes scope. |
-| `specs/done.md` | Human (always) | This freezes architecture. |
-| `plans/done.md` | Human or daemon (configurable) | Plans are execution. Human skims if they want. |
-| `tasks/done.md` | Daemon (auto) | All tasks verified. Mechanical check. |
+| `specs/reviews/done.md` | Human (always) | This freezes architecture. |
+| `plans/reviews/done.md` | Human or daemon (configurable) | Plans are execution. Human skims if they want. |
+| `tasks/reviews/done.md` | Daemon (auto) | All tasks verified. Mechanical check. |
 | `done.md` (top-level) | Human (always) | Acceptance. Run it, use it, is this the thing you meant? |
 
 ---
@@ -176,21 +176,28 @@ current/
       S-01.md
       S-02.md
       S-03.md
-      done.md                    # human approved spec set
+      reviews/                   # RC artifacts for this stage
+        iter-1-reviewer-a.md
+        iter-1-reviewer-b.md
+        iter-1-triage.md
+        done.md                  # human approved spec set
     plans/                       # appears during plan-gen
       P-01.md
       P-02.md
       P-03.md
-      done.md                    # human or daemon approved plans
+      reviews/
+        reviewer-a.md
+        reviewer-b.md
+        triage.md
+        done.md                  # plans approved
     tasks/                       # appears during task-gen
       T-01.md
       T-02.md
       T-03.md
-      done.md                    # daemon: all tasks verified
-    reviews/                     # review artifacts accumulate
-      spec-review.md
-      plan-review.md
-      code-review-T-01.md
+      reviews/
+        T-01-code-review.md
+        T-02-code-review.md
+        done.md                  # all tasks verified
     logs/                        # timestamped, append-only
     .work/                       # gitignored: agent scratch
 ```
@@ -203,14 +210,16 @@ done/
     change.md
     specs/
       S-01.md, S-02.md, S-03.md
-      done.md
+      reviews/
+        done.md
     plans/
       P-01.md, P-02.md, P-03.md
-      done.md
+      reviews/
+        done.md
     tasks/
       T-01.md, T-02.md, T-03.md
-      done.md
-    reviews/
+      reviews/
+        done.md
     logs/
     done.md                      # top-level: human accepted
 ```
@@ -319,7 +328,7 @@ Admission rules can be kind-specific (a `chore` may skip spec-gen if the change.
 
 1. **Generate specs.** One per deliverable, each with acceptance criteria. (`fix` and `chore` may produce one spec or skip to a direct plan.)
 2. **RC** — different agent reviews specs.
-3. **Human approves** — creates `specs/done.md`. Architecture is frozen.
+3. **Human approves** — creates `specs/reviews/done.md`. Architecture is frozen.
 
 ---
 
@@ -332,7 +341,7 @@ Admission rules can be kind-specific (a `chore` may skip spec-gen if the change.
 
 1. **Generate plans.** One per spec (1:1). File locations, changes, edge cases, verification.
 2. **RC** — different agent reviews plans.
-3. **Plans approved** — `plans/done.md` created (by human or daemon, depending on configuration).
+3. **Plans approved** — `plans/reviews/done.md` created (by human or daemon, depending on configuration).
 
 ---
 
@@ -348,7 +357,7 @@ Generate task list from plans
   → For each task:
       → Implement → Verify → RC
       → Triage: pass → next task | auto-fix (3x) | halt
-  → All tasks done: create tasks/done.md
+  → All tasks done: create tasks/reviews/done.md
   → Run done-when tests (from change.md)
   → ACCEPTANCE GATE (human runs it, verifies it's the thing they meant)
   → Human creates done.md → daemon moves folder to done/
@@ -379,7 +388,7 @@ Three approval points and one workspace:
 
 1. **Design changes** in `future/` — research, discuss, define (creative work, at your pace)
 2. **Approve the change** — scope, non-goals, what you refuse to build (set status: approved)
-3. **Approve the spec set** — architecture, seams, decomposition (create specs/done.md)
+3. **Approve the spec set** — architecture, seams, decomposition (create specs/reviews/done.md)
 4. **Accept the result** — run it, use it, is this the thing you meant? (create done.md)
 
 Between the approvals: agents run. The human's scarce resource is **judgment at freeze points**, not eyeballs on every markdown file.

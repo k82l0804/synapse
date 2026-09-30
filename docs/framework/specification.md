@@ -136,9 +136,9 @@ Change complete:      done.md exists at the change folder root
 
 | Location | What it means |
 |----------|---------------|
-| `C-042/specs/done.md` | Specs approved by human |
-| `C-042/plans/done.md` | Plans approved (human or auto) |
-| `C-042/tasks/done.md` | All tasks verified (auto) |
+| `C-042/specs/reviews/done.md` | Specs approved by human |
+| `C-042/plans/reviews/done.md` | Plans approved (human or auto) |
+| `C-042/tasks/reviews/done.md` | All tasks verified (auto) |
 | `C-042/done.md` | Change accepted by human, ready for `done/` |
 
 ### `done.md` Contents
@@ -153,7 +153,7 @@ Notes: Good decomposition. Proceed.
 ### Key Properties
 
 - **File existence is the state.** No YAML status fields to maintain or synchronize.
-- **Rollback is deletion.** Delete `specs/done.md` to revert to "specs not approved." The specs themselves remain for revision.
+- **Rollback is deletion.** Delete `specs/reviews/done.md` to revert to "specs not approved." The specs themselves remain for revision.
 - **Resumption is free.** Check which `done.md` files exist, pick up at the first missing one.
 - **Audit trail is built-in.** The approval record is inside the change folder, right next to what was approved.
 
@@ -406,8 +406,8 @@ Approval points are where a human creates a `done.md` file, freezing that stage.
 | Approval Point | What gets `done.md` | Who creates it | What it freezes |
 |---------------|---------------------|----------------|----------------|
 | **Change approval** | `change.md` status → approved | Human (always) | Scope, non-goals, done-when |
-| **Spec approval** | `specs/done.md` | Human (always) | Architecture, seams, ACs |
-| **Plan approval** | `plans/done.md` | Human or daemon (configurable) | Implementation approach |
+| **Spec approval** | `specs/reviews/done.md` | Human (always) | Architecture, seams, ACs |
+| **Plan approval** | `plans/reviews/done.md` | Human or daemon (configurable) | Implementation approach |
 | **Acceptance** | `done.md` (top-level) | Human (always) | The result is the thing you meant |
 
 ### Rules

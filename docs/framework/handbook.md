@@ -41,7 +41,7 @@ Three points in the pipeline freeze intent, and wrong intent is expensive to unw
 | Approval | What it freezes | How it works |
 |----------|----------------|-------------|
 | **Change approval** | Scope, non-goals, what you refuse to build | Human sets `status: approved` in change.md |
-| **Spec approval** | Architecture and seams (review the spec *set*, not individual files) | Human creates `specs/done.md` |
+| **Spec approval** | Architecture and seams (review the spec *set*, not individual files) | Human creates `specs/reviews/done.md` |
 | **Acceptance** | The result — run it, use it, decide it's the thing you meant | Human creates `done.md` |
 
 Auto-advance is illegal at all three. Green tests do not equal the product you wanted — acceptance is a product act, not a test result.
@@ -103,11 +103,11 @@ Imagine you want to add login to an app. Here's what happens.
 
 **Queue.** The daemon sees an approved change in `future/` and `current/` is empty. It moves `C-042/` to `current/`.
 
-**Specs.** The daemon reads the change and generates specs — one per deliverable. S-01 covers login flow, S-02 covers session management. Each spec says *what the system must do* — acceptance criteria, MUSTs, MUST NOTs — without choosing algorithms or naming files. The specs go through RC. You review the spec *set* — not the individual files, but the set: do these specs *together* cover everything the change promised? Do the seams between them make sense? You create `specs/done.md`. Architecture is now frozen.
+**Specs.** The daemon reads the change and generates specs — one per deliverable. S-01 covers login flow, S-02 covers session management. Each spec says *what the system must do* — acceptance criteria, MUSTs, MUST NOTs — without choosing algorithms or naming files. The specs go through RC. You review the spec *set* — not the individual files, but the set: do these specs *together* cover everything the change promised? Do the seams between them make sense? You create `specs/reviews/done.md`. Architecture is now frozen.
 
-**Plans.** The daemon generates plans from approved specs — one plan per spec. Each plan says *how*: specific files, functions, data structures, verification commands. Plans go through RC. You skim the plan if you want — low leverage if the spec was tight. `plans/done.md` is created.
+**Plans.** The daemon generates plans from approved specs — one plan per spec. Each plan says *how*: specific files, functions, data structures, verification commands. Plans go through RC. You skim the plan if you want — low leverage if the spec was tight. `plans/reviews/done.md` is created.
 
-**Tasks & Build.** Plans are consolidated into tasks. The daemon processes each task: implement, verify, RC. If review finds issues, the triage agent auto-fixes (up to 3 iterations). If it can't resolve, the pipeline halts. When all tasks are verified, `tasks/done.md` is created. The daemon runs the done-when tests from the change.
+**Tasks & Build.** Plans are consolidated into tasks. The daemon processes each task: implement, verify, RC. If review finds issues, the triage agent auto-fixes (up to 3 iterations). If it can't resolve, the pipeline halts. When all tasks are verified, `tasks/reviews/done.md` is created. The daemon runs the done-when tests from the change.
 
 **Acceptance.** You run it. You use it. You decide it's the thing you meant. You create `done.md`. The daemon moves `C-042/` to `done/` — a complete audit trail of change, specs, plans, tasks, reviews, and logs.
 
@@ -155,7 +155,7 @@ Within a change, specs can depend on other specs (interface or temporal), and ta
 
 Error means halt. The change stays in `current/` with all evidence intact. The triage agent auto-fixes what it can — up to 3 iterations of fix-verify-review. If it can't resolve the problem, the pipeline stops and the human is notified with what failed, why, and what was tried.
 
-Resumption is simple: check what `done.md` files exist, pick up from the first missing piece. No `specs/done.md`? Wait for spec approval. No `plans/done.md`? Generate plans. `tasks/done.md` missing? Process the next task.
+Resumption is simple: check what `done.md` files exist, pick up from the first missing piece. No `specs/reviews/done.md`? Wait for spec approval. No `plans/reviews/done.md`? Generate plans. `tasks/reviews/done.md` missing? Process the next task.
 
 → *Resumption, rollback, human options:* [Pipeline Architecture — Error Handling](pipeline-architecture.md#error-handling)
 
