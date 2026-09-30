@@ -1,6 +1,6 @@
 # Synapse Framework Handbook
 
-**Synapse** is an agentic software pipeline orchestrator — it manages how AI agents and humans collaborate to move software work from idea to verified code.
+**Synapse** is an agentic software pipeline orchestrator — it manages how AI agents and humans collaborate to move software work from idea to verified code. It runs on the developer's machine, manages one developer's workflow, and processes one change at a time. Team coordination — ticket assignment, code merging, release management — uses your existing tools.
 
 > **Audience:** Human operators, onboarding contributors, and anyone who needs to understand how the process works and why. This handbook covers the concepts. Linked documents provide operational detail.
 >
@@ -169,6 +169,32 @@ The pipeline has seven roles — Author, Fixer, Reviewer A, Reviewer B, Triage, 
 The key constraints: the author family stays consistent across a change (vocabulary drift across vendors looks like design drift), reviewers must be different vendors from the author, and triage must not be the author's family. Spend flagship tokens on authoring once and reviewing design artifacts. Spend fast tokens on triage and implementation. Spend your time on three gates.
 
 → *Full role table, tier definitions, current harness assignments:* [Pipeline Architecture — Roles & Tiers](pipeline-architecture.md#roles--tiers)
+
+---
+
+## Teams
+
+Synapse is a per-developer tool. Each developer runs their own pipeline on their own machine, on their own branch. Multiple developers can work on the same codebase — their pipelines are independent and don't know about each other.
+
+The typical team flow:
+
+```
+Jira ticket assigned to you
+  → create branch feature/JIRA-123-slug
+  → create BRIEF.md with ticket: JIRA-123
+  → approve brief (Brief Gate)
+  → pipeline runs (specs → plans → build)
+  → approve result (Acceptance Gate)
+  → open MR on GitLab, link JIRA-123
+  → merge, close ticket
+  → next ticket
+```
+
+Synapse replaces the *process* (how you go from idea to code), not the *coordination* (who does what, when, in what order). Jira handles coordination. Git handles integration. GitLab handles code review and merge. Synapse handles everything between "I have a ticket" and "I'm opening an MR."
+
+The `ticket` field in BRIEF.md links the change back to the coordination layer — it's a string, not an integration. Synapse doesn't talk to Jira. The developer is the integration layer.
+
+→ *BRIEF.md template with ticket field:* [Pipeline Architecture — BRIEF.md Template](pipeline-architecture.md#briefmd-template)
 
 ---
 

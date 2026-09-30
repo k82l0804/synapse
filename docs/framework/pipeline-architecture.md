@@ -6,7 +6,7 @@
 
 ## Overview
 
-Synapse is a pipeline that processes **changes** — one at a time, through four stages.
+Synapse is a pipeline that runs on the developer's machine and processes **changes** — one at a time, through four stages.
 
 ```
 design/  →  plan/  →  build/  →  done/
@@ -17,6 +17,8 @@ A **change** is the unit that flows through the pipeline. Features, bug fixes, r
 The pipeline is autonomous between three human gates. Agents draft and execute. The human owns the product: approving the brief, approving the spec set, and accepting the result.
 
 A pipeline with today's best models is a strong junior staff: fast drafts, fast implementation of agreed work, decent self-check against tests. It is not a PM, a tech lead, and a user rolled into one process. Wrong intent compiles all the way to green. The three gates are where the human catches that.
+
+On a team, each developer runs their own pipeline on their own branch. Team coordination — ticket assignment, code merging, release management — uses existing tools (Jira, GitLab, etc.). Synapse manages the individual developer's workflow from brief to done.
 
 ---
 
@@ -197,6 +199,7 @@ Every change, regardless of kind:
 ```yaml
 ---
 kind: feature              # feature | fix | refactor | chore | spike
+ticket: JIRA-123           # optional: link to external tracker (Jira, Linear, GitHub Issue)
 status: draft              # draft | review | approved
 depends_on: []             # slugs that must be in done/ before this enters plan/
 related: []                # informational only

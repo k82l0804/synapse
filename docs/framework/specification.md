@@ -95,6 +95,7 @@ An immutable record of a gate decision. Created when a human approves, rejects, 
 - **Never reused.** Cancelled or abandoned artifacts retain their IDs.
 - **Monotonic.** Each new ID is greater than all previous IDs in its sequence.
 - **No suffixes on split.** Split artifacts get new sequence numbers (S-043, S-044), not suffixes (S-042a, S-042b).
+- **Per-pipeline scope.** ID sequences are local to the pipeline instance (the developer's machine). Two developers independently assigning S-001 is not a collision — each change folder is its own namespace.
 
 ### Why Flat IDs
 
@@ -183,6 +184,7 @@ Task:
 | Field | Type | Constraints |
 |-------|------|-------------|
 | kind | enum | `feature \| fix \| refactor \| chore \| spike` |
+| ticket | string | Optional. External tracker ID (e.g., `JIRA-123`). Links change to coordination layer. |
 | status | enum | `draft \| review \| approved` |
 | Intent | section | One sentence |
 | Non-Goals | section | Present (may be empty with rationale) |
