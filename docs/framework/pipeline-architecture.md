@@ -553,6 +553,213 @@ my-project/
 
 When a developer works on multiple repos, each has its own pipeline. The MCP server resolves which pipeline to use based on the file the developer is working on — walk up from the active file to find the nearest `.synapse/`, same way git finds `.git/`.
 
+### Git Integration
+
+The pipeline manages the full git lifecycle. The developer never thinks about branches, commit messages, or MR creation during a pipeline run.
+
+#### Branch Lifecycle
+
+| Pipeline event | Git action |
+|---------------|-----------|
+| Change moves to `current/` | `git checkout -b <branch-name>` |
+| Specs approved | `git commit` — spec artifacts |
+| Each task implemented | `git commit` — code + tests |
+| Change accepted | Open MR with `mr-description.md` as description |
+| MR merged | Move change to `done/`, delete branch |
+
+#### Branch Naming
+
+Configurable in `.synapse/config.yaml`. Teams often have rules — Synapse follows them.
+
+```yaml
+# .synapse/config.yaml
+git:
+  branch_pattern: "{kind}/{ticket}-{slug}"
+  # Available tokens: {kind}, {ticket}, {slug}, {id}
+  # Examples:
+  #   "feature/JIRA-123-auth-login"     ← {kind}/{ticket}-{slug}
+  #   "feat/C-042-auth-login"           ← {kind}/{id}-{slug}
+  #   "joe/JIRA-123"                    ← custom prefix
+```
+
+Default patterns per kind:
+
+| Kind | Default branch prefix | Example |
+|------|--------------------|---------|
+| feature | `feature/` | `feature/JIRA-123-auth-login` |
+| fix | `fix/` | `fix/JIRA-456-session-timeout` |
+| refactor | `refactor/` | `refactor/JIRA-789-cleanup-routes` |
+| chore | `chore/` | `chore/JIRA-012-update-deps` |
+| spike | `spike/` | `spike/JIRA-345-evaluate-auth` |
+
+#### Commit Conventions
+
+The pipeline writes conventional commits using data from specs and tasks:
+
+```
+feat(auth): add login route (S-01, T-01)
+feat(auth): add session manager (S-02, T-02)
+test(auth): add login e2e tests (S-01, T-03)
+docs(C-042): add specs for auth-login
+docs(C-042): add walkthrough and ticket-close
+```
+
+Configurable format in `config.yaml`:
+
+```yaml
+git:
+  commit_pattern: "{type}({scope}): {description} ({spec}, {task})"
+```
+
+#### MR Automation
+
+When the human accepts the change (creates `done.md`), the pipeline:
+
+1. Opens MR from the change branch → main (or configured target branch)
+2. Sets MR title: `feat(JIRA-123): Add OAuth login`
+3. Sets MR description: contents of `mr-description.md`
+4. Adds labels from `kind`
+5. Links issue: `Closes JIRA-123`
+6. Assigns reviewers (if configured)
+
+```yaml
+git:
+  target_branch: main                    # or develop, or release/*
+  auto_mr: true                          # open MR on acceptance
+  mr_reviewers: [alice, bob]             # optional: auto-assign
+  mr_labels_from_kind: true              # feature → "feature" label
+```
+
+---
+
+## A Day with Synapse
+
+Joe is a developer on a team. After sprint planning, he has 5 tickets for Project A (`fox-code-cli`) and 3 for Project B (`synapse`). Here's his day.
+
+### 9:00 — Queue up changes (30 min)
+
+Joe opens the IDE. For each ticket, he tells the agent what he needs:
+
+```
+Joe: "Create a change for JIRA-456 — we need to add product 
+      registration. Here's the ticket description and the 
+      research doc from the TL."
+
+AGY: [reads ticket, reads research doc, creates change.md]
+     "Created C-042 in future/. Here's the change — review 
+      the intent and non-goals?"
+
+Joe: "Looks good. Approve it."
+
+AGY: [calls approve_change → status: approved]
+     [pipeline generates ticket-summary.md]
+     "Change approved. Here's the ticket summary — want me 
+      to update JIRA-456?"
+
+Joe: [copies ticket-summary into Jira, sets status: In Progress]
+```
+
+Joe repeats this for all 8 tickets — 5 in `fox-code-cli/.synapse/future/` and 3 in `synapse/.synapse/future/`. Each takes ~3 minutes. Changes are queued by priority; dependencies are declared.
+
+### 9:30 — Pipeline runs (unattended)
+
+Joe grabs coffee. The pipeline picks up the highest-priority change in Project A:
+
+```
+Pipeline: moves C-042 to current/
+Pipeline: creates branch feature/JIRA-456-product-registration
+Pipeline: generates specs S-01, S-02, S-03
+Pipeline: runs RC (dual review + triage) → pass
+Pipeline: notification → "Specs for C-042 ready for review"
+```
+
+### 9:45 — Review specs (10 min)
+
+Joe gets a notification. He reads the specs in his editor:
+
+```
+Joe: "S-02 needs to handle the case where the product 
+      already exists. Add an AC for duplicate detection."
+
+AGY: [revises S-02, resubmits for RC]
+
+Pipeline: RC pass on revised specs
+Pipeline: notification → "Specs ready for re-review"
+
+Joe: "Good. Approve specs."
+
+AGY: [calls approve_stage("specs") → creates specs/reviews/done.md]
+```
+
+### 9:55 — Back to other work
+
+Pipeline generates plans, tasks, and starts building. Joe doesn't watch this. He switches to Project B and enters the next change:
+
+```
+Joe: "Create a change for JIRA-789 — fix the timeout 
+      bug in the session handler."
+
+AGY: [creates C-015 in synapse/.synapse/future/]
+```
+
+### 11:00 — Accept first build
+
+Notification: "C-042 build complete, all tests passing."
+
+```
+Joe: [runs the app, tries registering a product]
+     "Works. Accept."
+
+AGY: [calls approve_stage("acceptance")]
+     [pipeline generates mr-description.md + ticket-close.md]
+     [pipeline opens MR: feat(JIRA-456): Add product registration]
+     "MR !234 opened. Here's the ticket closing statement."
+
+Joe: [copies ticket-close.md into JIRA-456]
+     [sets Jira status: Done]
+     [moves to next change — pipeline auto-picks C-043]
+```
+
+### 11:05 — Next change starts automatically
+
+```
+Pipeline: C-042 → done/
+Pipeline: C-043 → current/ (next highest priority)
+Pipeline: creates branch feature/JIRA-457-inventory-search
+Pipeline: generates specs...
+```
+
+### Joe's day in numbers
+
+| | Without Synapse | With Synapse |
+|--|----------------|-------------|
+| Active decision time | ~8 hours (all day) | ~2 hours |
+| Changes processed | 2-3 (one at a time, manually) | 5-8 (queued, pipelined) |
+| Git operations | Manual (branch, commit, push, MR) | Automatic |
+| Jira updates | Manual (write descriptions, close) | Copy-paste from generated artifacts |
+| MR descriptions | Written from memory | Generated with full traceability |
+| Commit messages | `"fix stuff"` | `feat(auth): add login route (S-01, T-01)` |
+| Audit trail | Chat history (maybe) | done/ folder (always) |
+
+### What Joe doesn't do
+
+- Create branches
+- Write commit messages
+- Write MR descriptions
+- Write Jira ticket descriptions (for dev-created tickets)
+- Write Jira closing statements
+- Babysit agent implementation
+- Manually run review cycles
+- Track which change is in which state
+
+### What Joe does
+
+- Discuss scope and non-goals (creative work)
+- Approve changes (3 min each)
+- Review spec sets (10 min each)
+- Accept results (5 min each)
+- Copy-paste into Jira and merge MRs
+
 ---
 
 ## Roles & Tiers
