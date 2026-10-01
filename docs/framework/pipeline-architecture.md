@@ -404,6 +404,83 @@ Between the approvals: agents run. The human's scarce resource is **judgment at 
 
 ---
 
+## Generated Outputs
+
+The pipeline generates three artifacts for external consumption — Jira and GitLab. The developer doesn't write these; the pipeline synthesizes them from the change folder contents. Copy, paste, done.
+
+### `ticket-summary.md` — generated on change approval
+
+For creating or updating the Jira ticket. Synthesized from `change.md`.
+
+| Jira Field | Source |
+|-----------|--------|
+| Type | `kind` → Story / Bug / Task / Spike / Chore |
+| Priority | `priority` → Critical / High / Medium / Low |
+| Summary | change.md Intent |
+| Description | Intent + Blast Radius + Technical Notes |
+| Acceptance Criteria | Done-When, converted to checkboxes |
+| Components | Blast Radius (extracted modules/paths) |
+| Labels | kind + custom tags |
+| Story Points | Derived from spec/task count |
+| Linked Issues | `depends_on` (other ticket IDs) |
+
+**Two flows:**
+- **Dev creates ticket:** Pipeline generates `ticket-summary.md` → dev copies into Jira → gets JIRA-123 → puts `ticket: JIRA-123` into change.md.
+- **TL creates ticket:** Dev gets assigned JIRA-123 → ticket info feeds into change.md (`ticket: JIRA-123`) → `ticket-summary.md` can update the ticket with structured AC and technical notes.
+
+### `mr-description.md` — generated on acceptance
+
+For the GitLab/GitHub merge request. Synthesized from the entire change folder.
+
+| MR Field | Source |
+|----------|--------|
+| Title | `kind(ticket): Intent` — e.g. `feat(JIRA-123): Add OAuth login` |
+| Description | What changed, why, how (architecture decisions) |
+| Key files | Plans → file list with change descriptions |
+| Tests added | Done-When results + spec AC verification |
+| Related issues | `Closes JIRA-123` |
+| Review summary | RC iterations, findings resolved |
+| Breaking changes | Blast Radius section |
+| Not included | Non-Goals (explicit scope boundary) |
+
+### `ticket-close.md` — generated on acceptance
+
+For closing/resolving the Jira ticket. Synthesized from the completed change folder.
+
+| Jira Field | Source |
+|-----------|--------|
+| Resolution | "Fixed" + acceptance summary |
+| Definition of Done | Done-When checkboxes, all checked |
+| Test Traceability | AC → Spec → Test → Result table |
+| Work Log Summary | Pipeline stage timestamps and durations |
+| Closing Statement | What was built, tested, and deferred |
+| Deferred Items | Non-goals + anything descoped → links to new tickets |
+
+### Where they live
+
+```
+C-042/
+  change.md
+  ticket-summary.md       ← generated on change approval
+  specs/
+    S-01.md, S-02.md
+    reviews/
+      done.md
+  plans/
+    P-01.md, P-02.md
+    reviews/
+      done.md
+  tasks/
+    T-01.md, T-02.md
+    reviews/
+      done.md
+  mr-description.md        ← generated on acceptance
+  ticket-close.md          ← generated on acceptance
+  done.md
+```
+
+---
+
 ## Design Properties
 
 1. **Sequential.** One change at a time in `current/`. No concurrency.
@@ -412,6 +489,54 @@ Between the approvals: agents run. The human's scarce resource is **judgment at 
 4. **Fail-safe.** Error = halt. Evidence preserved in place.
 5. **Resumable.** Check what `done.md` files exist, pick up where you left off.
 6. **File-driven.** State is the filesystem. `done.md` existence is the state machine.
+
+---
+
+## Implementation Architecture
+
+> **Status:** Under design. This section captures decisions made so far.
+
+### MCP Server as Pipeline Engine
+
+The pipeline runs as an MCP server — a persistent process on the developer's machine that:
+- Watches the `.synapse/` folder for filesystem changes (done.md markers)
+- Invokes agents via CLI (`claude -p`, `grok -p`, `agy -p`) for generation and review
+- Manages the RC (dual review + triage)
+- Exposes tools so the IDE agent can interact with the pipeline
+
+### MCP Tools (preliminary)
+
+| Tool | Who calls it | What it does |
+|------|-------------|-------------|
+| `pipeline_status` | Agent or extension | Current change, stage, what's pending |
+| `list_changes` | Agent | List all changes across bins |
+| `create_change` | Agent | Create C-NNN folder in future/ with change.md template |
+| `get_change` | Agent | Read a change and its current state |
+| `approve_change` | Agent (on human's behalf) | Set status: approved in change.md |
+| `approve_stage` | Agent (on human's behalf) | Create done.md in the appropriate reviews/ folder |
+| `pending_approvals` | Agent or extension | What needs human attention? |
+| `get_artifact` | Agent | Read a specific spec/plan/task |
+
+### IDE Integration
+
+The developer interacts with Synapse through the IDE agent (AGY). The agent calls MCP tools to create changes, check status, and present artifacts for review. The human approves through conversation — "approve the specs" → agent calls `approve_stage("specs")` → pipeline advances.
+
+A lightweight VSCode extension provides notifications and status display:
+- Filesystem watcher on `.synapse/current/` fires notifications when human input is needed
+- Status bar shows current change and stage
+- Optional tree view for the three bins
+
+The extension is a window into the MCP server — it does not run agents or manage the pipeline.
+
+### `.synapse/` Location
+
+> **Open question:** Should `.synapse/` be per-repo (like `.git/`) or one at the workspace root?
+
+**Per-repo:** Git operations are implicit (you're already in the repo). But "which pipeline?" is ambiguous when multiple repos are open in one workspace.
+
+**Root-level:** One pipeline, one queue, no ambiguity. But changes need a `target_repo` field and git operations require routing to the correct repo.
+
+Decision pending. The pipeline model works identically in both cases — only the git plumbing differs.
 
 ---
 
@@ -487,3 +612,4 @@ This is the current recommended assignment. It is a configuration, not architect
 ## Design Rule
 
 > **One change. Three bins. Three approval points. Halt on error. Folder is the record. `done.md` is the state machine.**
+
