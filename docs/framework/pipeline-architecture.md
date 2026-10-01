@@ -530,13 +530,28 @@ The extension is a window into the MCP server — it does not run agents or mana
 
 ### `.synapse/` Location
 
-> **Open question:** Should `.synapse/` be per-repo (like `.git/`) or one at the workspace root?
+Per-repo, like `.git/`. Each repo gets its own `.synapse/` folder, its own pipeline, its own C-NNN sequence.
 
-**Per-repo:** Git operations are implicit (you're already in the repo). But "which pipeline?" is ambiguous when multiple repos are open in one workspace.
+```
+synapse init    →    creates .synapse/ in the current repo
+```
 
-**Root-level:** One pipeline, one queue, no ambiguity. But changes need a `target_repo` field and git operations require routing to the correct repo.
+The `.synapse/` folder is gitignored — it's local working state per developer. The code gets committed and pushed; the process artifacts stay local.
 
-Decision pending. The pipeline model works identically in both cases — only the git plumbing differs.
+```
+my-project/
+  .git/
+  .gitignore              ← includes .synapse/
+  .synapse/
+    config.yaml           ← model assignments, role config
+    future/
+    current/
+    done/
+  src/
+  packages/
+```
+
+When a developer works on multiple repos, each has its own pipeline. The MCP server resolves which pipeline to use based on the file the developer is working on — walk up from the active file to find the nearest `.synapse/`, same way git finds `.git/`.
 
 ---
 
